@@ -1,0 +1,21 @@
+Subject: Computer Science & Engineering
+Course Code: CS301
+Course Title: Core Software Engineering & Computer Principles
+
+Unit 1: Object-Oriented Software Design
+- Principles of OOP: Encapsulation, Abstraction, Inheritance, Polymorphism
+- Class and Object relationships: Association, Aggregation, Composition
+- Access modifiers and internal state encapsulation
+- Method overloading and method overriding in polymorphism
+
+Unit 2: Data Structures & Algorithmic Foundations
+- Linear Data Structures: Dynamic Arrays, Singly and Doubly Linked Lists
+- LIFO and FIFO: Stacks, Queues, and Priority Queues
+- Non-linear Data Structures: Binary Search Trees (BST), AVL Trees, Balanced Search Trees
+- Algorithmic Complexity: Asymptotic notations, Big-O analysis, Best/Average/Worst cases
+
+Unit 3: Database Management & Transaction Processing
+- Relational Data Model: Schemas, Primary Keys, Foreign Keys, Normalization (1NF, 2NF, 3NF)
+- SQL Queries: Joins, Aggregations, Grouping, and Nested Subqueries
+- Transaction Management: ACID properties (Atomicity, Consistency, Isolation, Durability)
+- Concurrency Control, Deadlock Prevention, and Indexing strategies for high throughput
