@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useMemo, useRef, Suspense } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -8,6 +8,8 @@ import { apiClient } from "@/lib/api";
 import {
   ArrowLeft,
   BookOpen,
+  Check,
+  ChevronDown,
   GraduationCap,
   Layers,
   Loader2,
@@ -27,23 +29,201 @@ const optionClass = (selected: boolean) =>
       : "border-stone-300 bg-white text-stone-700 hover:border-stone-500"
   }`;
 
+type SubjectEntry = { name: string; topics: string[] };
+
+const toTopic = (t: any): string =>
+  typeof t === "string" ? t : t?.name ?? t?.title ?? t?.topic ?? "";
+
+// Accepts several likely response shapes from GET /syllabus/subjects:
+//   [{ subject, topics: [...] }]  |  { subjects: [...] }  |  { Physics: [...] }
+function normalizeSubjects(raw: any): SubjectEntry[] {
+  const list = Array.isArray(raw) ? raw : raw?.subjects ?? raw;
+
+  if (Array.isArray(list)) {
+    return list
+      .map((s: any) => ({
+        name: typeof s === "string" ? s : s?.subject ?? s?.name ?? s?.title ?? "",
+        topics: (Array.isArray(s?.topics) ? s.topics : []).map(toTopic).filter(Boolean),
+      }))
+      .filter((s) => s.name);
+  }
+
+  if (list && typeof list === "object") {
+    return Object.entries(list).map(([name, topics]) => ({
+      name,
+      topics: (Array.isArray(topics) ? topics : []).map(toTopic).filter(Boolean),
+    }));
+  }
+  return [];
+}
+
+type DropdownProps = {
+  id: string;
+  icon: React.ReactNode;
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+  placeholder: string;
+  disabled?: boolean;
+};
+
+function Dropdown({ id, icon, value, options, onChange, placeholder, disabled }: DropdownProps) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  // Close when clicking outside
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  // Keep the highlighted option visible while using the keyboard
+  useEffect(() => {
+    if (open) listRef.current?.children[active]?.scrollIntoView({ block: "nearest" });
+  }, [open, active]);
+
+  const toggle = () => {
+    if (disabled) return;
+    setActive(Math.max(0, options.indexOf(value)));
+    setOpen((o) => !o);
+  };
+
+  const select = (v: string) => {
+    onChange(v);
+    setOpen(false);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (disabled) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (!open) toggle();
+      else setActive((i) => Math.min(i + 1, options.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!open) toggle();
+      else setActive((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter" && open) {
+      e.preventDefault();
+      if (options[active] !== undefined) select(options[active]);
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div ref={rootRef} className="relative mt-2">
+      <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400">
+        {icon}
+      </span>
+      <button
+        id={id}
+        type="button"
+        onClick={toggle}
+        onKeyDown={onKeyDown}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`${inputClass} flex items-center pr-11 text-left disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400`}
+      >
+        <span className={`block truncate ${value ? "" : "text-stone-400"}`}>
+          {value || placeholder}
+        </span>
+      </button>
+      <ChevronDown
+        className={`pointer-events-none absolute right-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-400 transition-transform ${
+          open ? "rotate-180" : ""
+        }`}
+      />
+
+      {open && (
+        <ul
+          ref={listRef}
+          role="listbox"
+          aria-labelledby={id}
+          className="absolute z-20 mt-2 max-h-60 w-full overflow-auto rounded-md border border-stone-300 bg-white py-1 shadow-lg"
+        >
+          {options.map((opt, i) => (
+            <li
+              key={opt}
+              role="option"
+              aria-selected={opt === value}
+              onMouseEnter={() => setActive(i)}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => select(opt)}
+              className={`flex cursor-pointer items-center justify-between gap-3 px-4 py-2.5 text-sm text-stone-800 ${
+                i === active ? "bg-stone-100" : ""
+              } ${opt === value ? "font-semibold" : ""}`}
+            >
+              <span className="truncate">{opt}</span>
+              {opt === value && <Check className="h-4 w-4 shrink-0" />}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function QuizConfigForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [subject, setSubject] = useState("Computer Science");
-  const [topic, setTopic] = useState("Object-Oriented Programming (OOP)");
+  const [entries, setEntries] = useState<SubjectEntry[]>([]);
+  const [subject, setSubject] = useState("");
+  const [topic, setTopic] = useState("");
+  const [loadingSubjects, setLoadingSubjects] = useState(true);
   const [count, setCount] = useState(5);
   const [difficulty, setDifficulty] = useState("Medium");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Keep ?subject= / ?topic= so they can preselect once the data loads
+  const initialParams = useRef({
+    subject: searchParams.get("subject"),
+    topic: searchParams.get("topic"),
+  });
+
+  const topics = useMemo(
+    () => entries.find((e) => e.name === subject)?.topics ?? [],
+    [entries, subject]
+  );
+
   useEffect(() => {
-    const s = searchParams.get("subject");
-    const t = searchParams.get("topic");
-    if (s) setSubject(s);
-    if (t) setTopic(t);
-  }, [searchParams]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = normalizeSubjects(await apiClient.getSubjects());
+        if (cancelled) return;
+        setEntries(list);
+
+        const { subject: s, topic: t } = initialParams.current;
+        const match = list.find((e) => e.name === s) ?? list[0];
+        if (match) {
+          setSubject(match.name);
+          setTopic(t && match.topics.includes(t) ? t : match.topics[0] ?? "");
+        }
+      } catch (err: any) {
+        if (!cancelled) setError(err.message || "Failed to load subjects");
+      } finally {
+        if (!cancelled) setLoadingSubjects(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSubjectChange = (name: string) => {
+    setSubject(name);
+    setTopic(entries.find((e) => e.name === name)?.topics[0] ?? "");
+  };
 
   const handleStartQuiz = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,18 +298,21 @@ function QuizConfigForm() {
             <label htmlFor="subject" className="block text-sm font-bold text-black">
               Subject
             </label>
-            <div className="relative mt-2">
-              <BookOpen className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-400" />
-              <input
-                id="subject"
-                type="text"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                required
-                placeholder="e.g. Computer Science"
-                className={inputClass}
-              />
-            </div>
+            <Dropdown
+              id="subject"
+              icon={<BookOpen className="h-5 w-5" />}
+              value={subject}
+              options={entries.map((e) => e.name)}
+              onChange={handleSubjectChange}
+              disabled={loadingSubjects || entries.length === 0}
+              placeholder={
+                loadingSubjects
+                  ? "Loading subjects..."
+                  : entries.length === 0
+                  ? "No subjects found. Upload a syllabus PDF first"
+                  : "Select a subject"
+              }
+            />
           </div>
 
           {/* Topic */}
@@ -137,18 +320,15 @@ function QuizConfigForm() {
             <label htmlFor="topic" className="block text-sm font-bold text-black">
               Topic
             </label>
-            <div className="relative mt-2">
-              <Layers className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-400" />
-              <input
-                id="topic"
-                type="text"
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                required
-                placeholder="e.g. Object-Oriented Programming"
-                className={inputClass}
-              />
-            </div>
+            <Dropdown
+              id="topic"
+              icon={<Layers className="h-5 w-5" />}
+              value={topic}
+              options={topics}
+              onChange={setTopic}
+              disabled={loadingSubjects || topics.length === 0}
+              placeholder={topics.length === 0 ? "No topics available" : "Select a topic"}
+            />
           </div>
 
           {/* Number of questions */}
@@ -198,7 +378,7 @@ function QuizConfigForm() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !subject || !topic}
             className="inline-flex w-full items-center justify-center gap-2.5 rounded-md bg-black py-4 text-base font-semibold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? (
