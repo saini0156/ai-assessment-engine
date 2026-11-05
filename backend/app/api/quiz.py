@@ -9,6 +9,7 @@ from app.models.schemas import (
 )
 from app.services.llm_service import llm_service
 from app.services.session_store import session_store
+from app.services.db_service import db_service
 
 router = APIRouter(prefix="/quiz", tags=["Quiz"])
 
@@ -17,7 +18,7 @@ async def generate_quiz(request: QuizGenerateRequest):
     """
     Generate multiple choice questions.
     ZERO-LEAK SECURITY: Correct answers and explanations are stored in backend memory
-    and NEVER sent to the client browser until submission.
+    and PostgreSQL, and NEVER sent to the client browser until submission.
     """
     # Generate full quiz session with internal answer keys
     internal_session = llm_service.generate_quiz(
@@ -27,8 +28,11 @@ async def generate_quiz(request: QuizGenerateRequest):
         difficulty=request.difficulty
     )
     
-    # Store securely in server-side session store
+    # 1. Store securely in server-side in-memory store
     session_store.save_session(internal_session)
+
+    # 2. Persist session and question snapshots to PostgreSQL
+    db_service.persist_quiz_session(internal_session, difficulty=request.difficulty)
     
     # Create sanitized public questions (NO answers, NO explanations)
     public_questions = [
@@ -52,7 +56,8 @@ async def generate_quiz(request: QuizGenerateRequest):
 @router.post("/submit", response_model=QuizSubmitResponse)
 async def submit_quiz(request: QuizSubmitRequest):
     """
-    Submit student answers, grade the test, and release answer keys and explanations.
+    Submit student answers, grade the test, release answer keys and explanations,
+    and persist results to PostgreSQL.
     """
     session = session_store.get_session(request.quiz_session_id)
     if not session:
@@ -95,6 +100,14 @@ async def submit_quiz(request: QuizSubmitRequest):
     else:
         feedback = "Keep practicing! Use the 'Explain My Mistake' tutor on the questions you missed to master these fundamentals."
         
+    # Record student answers and score permanently in PostgreSQL
+    db_service.record_quiz_submission(
+        quiz_session_id=session.quiz_session_id,
+        answers=request.answers,
+        reviews=reviews,
+        score_percentage=score_percentage
+    )
+
     return QuizSubmitResponse(
         quiz_session_id=session.quiz_session_id,
         score_percentage=score_percentage,
