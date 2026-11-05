@@ -12,15 +12,17 @@ Extract 3 to 6 major topics. For each topic, provide:
 - subtopics (list of 2-5 subtopic strings)
 - summary (1 clear sentence summarizing the topic)
 
-Return ONLY a valid JSON array matching this exact schema:
-[
-  {{
-    "topic_id": "top_1",
-    "topic_name": "...",
-    "subtopics": ["...", "..."],
-    "summary": "..."
-  }}
-]
+Return ONLY a valid JSON object matching this exact schema:
+{{
+  "topics": [
+    {{
+      "topic_id": "top_1",
+      "topic_name": "...",
+      "subtopics": ["...", "..."],
+      "summary": "..."
+    }}
+  ]
+}}
 
 Syllabus Text:
 {text}
@@ -40,12 +42,18 @@ DISTRACTOR ENGINEERING RULES:
 4. ABSOLUTELY FORBIDDEN: NEVER use 'All of the above', 'None of the above', or 'Both A and B'.
 5. Provide a clear, educational 1-sentence explanation for why the correct option is right.
 
-Return ONLY a valid JSON array of objects with keys:
-- id: "q_1", "q_2", etc.
-- question: string
-- options: {{"A": "...", "B": "...", "C": "...", "D": "..."}}
-- correct_option: "A" or "B" or "C" or "D"
-- explanation: string
+Return ONLY a valid JSON object with key "questions" containing a list of question objects:
+{{
+  "questions": [
+    {{
+      "id": "q_1",
+      "question": "string",
+      "options": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
+      "correct_option": "A",
+      "explanation": "string"
+    }}
+  ]
+}}
 """
 
 TUTOR_EXPLAIN_PROMPT = """
