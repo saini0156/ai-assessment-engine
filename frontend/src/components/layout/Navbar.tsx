@@ -28,6 +28,10 @@ export function Navbar() {
 
   // Transparent (white text) only on the home page, before scrolling
   const transparent = isHome && !scrolled;
+    // Hidden on the quiz builder (/quiz/new) and the test player (/quiz/<id>)
+  if (/^\/quiz\/[^/]+$/.test(pathname)) return null;
+
+  
 
   return (
     <header
