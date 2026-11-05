@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { ArrowUpRight, GraduationCap } from "lucide-react";
 
 const footerLinks = [
@@ -9,6 +12,11 @@ const footerLinks = [
 ];
 
 export function Footer() {
+  const pathname = usePathname();
+
+  // The quiz builder is a full-screen page with no footer
+  if (pathname === "/quiz/new") return null;
+
   return (
     <footer className="border-t border-stone-200 bg-stone-50">
       <div className="mx-auto max-w-full px-6 py-12 sm:px-8 lg:px-12">
@@ -40,7 +48,7 @@ export function Footer() {
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className="inline-flex items-center gap-1 text-sm text-stone-500 transition-colors hover:text-black"
+                    className="group inline-flex items-center gap-1 text-sm text-stone-500 transition-colors hover:text-black"
                   >
                     {link.label}
                     <ArrowUpRight className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
@@ -88,7 +96,7 @@ export function Footer() {
               href="/terms"
               className="text-xs text-stone-500 transition-colors hover:text-black"
             >
-              Terms & Conditions
+              Terms &amp; Conditions
             </Link>
 
             <Link
