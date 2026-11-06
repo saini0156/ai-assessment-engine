@@ -73,14 +73,14 @@ function Dropdown({ id, icon, value, options, onChange, placeholder, disabled }:
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
-  // Close when clicking outside
+  // Close when tapping/clicking outside (pointerdown works for mouse and touch)
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
+    const onDown = (e: PointerEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
   }, [open]);
 
   // Keep the highlighted option visible while using the keyboard
@@ -157,7 +157,7 @@ function Dropdown({ id, icon, value, options, onChange, placeholder, disabled }:
               onMouseEnter={() => setActive(i)}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => select(opt)}
-              className={`flex cursor-pointer items-center justify-between gap-3 px-4 py-2.5 text-sm text-stone-800 ${
+              className={`flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm text-stone-800 sm:py-2.5 ${
                 i === active ? "bg-stone-100" : ""
               } ${opt === value ? "font-semibold" : ""}`}
             >
@@ -248,9 +248,9 @@ function QuizConfigForm() {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col overflow-y-auto bg-white lg:flex-row lg:overflow-hidden">
-      {/* ============ LEFT: image + content (60%) ============ */}
-      <div className="relative min-h-[300px] bg-stone-300 lg:h-full lg:w-[60%]">
+    <div className="fixed inset-0 z-[60] flex flex-col overflow-y-auto overscroll-contain bg-white lg:flex-row lg:overflow-hidden">
+      {/* ============ LEFT / TOP: image + content ============ */}
+      <div className="relative min-h-[200px] shrink-0 bg-stone-300 sm:min-h-[260px] lg:h-full lg:w-[60%]">
         <Image
           src="/images/quiz-bg.jpg"
           alt=""
@@ -259,20 +259,23 @@ function QuizConfigForm() {
           sizes="(min-width: 1024px) 60vw, 100vw"
           className="object-cover"
         />
-        {/* Light overlay: keeps the photo bright, text still readable */}
-        <div className="absolute inset-0 bg-gradient-to-r from-black/65 via-black/25 to-black/10" />
+        {/* Mobile: dark top-to-bottom. Desktop: dark left-to-right */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/70 lg:bg-gradient-to-r lg:from-black/65 lg:via-black/25 lg:to-black/10" />
 
-        <div className="relative z-10 flex h-full flex-col justify-between p-6 sm:p-10 lg:p-14">
-          <Link href="/" className="inline-flex items-center gap-2.5 self-start text-white">
-            <GraduationCap className="h-8 w-8" />
-            <span className="text-2xl font-extrabold uppercase tracking-[0.2em]">QuizPro</span>
+        <div className="relative z-10 flex h-full flex-col justify-between gap-6 px-5 pb-10 pt-5 sm:p-10 lg:p-14">
+          <Link href="/" className="inline-flex items-center gap-2 self-start text-white">
+            <GraduationCap className="h-7 w-7 sm:h-8 sm:w-8" />
+            <span className="text-lg font-extrabold uppercase tracking-[0.2em] sm:text-2xl">
+              QuizPro
+            </span>
           </Link>
 
-          <div className="max-w-2xl space-y-4 py-8 lg:py-0">
-            <h1 className="text-4xl font-extrabold leading-[1.1] tracking-tight text-white drop-shadow-md sm:text-5xl xl:text-6xl">
+          <div className="max-w-2xl space-y-3 lg:space-y-4 lg:py-0">
+            <h1 className="text-3xl font-extrabold leading-[1.1] tracking-tight text-white drop-shadow-md sm:text-5xl xl:text-6xl">
               Turn your syllabus into practice quizzes.
             </h1>
-            <p className="max-w-xl text-base leading-relaxed text-white/90 drop-shadow sm:text-lg">
+            {/* Hidden on phones so the form is visible sooner */}
+            <p className="hidden max-w-xl text-base leading-relaxed text-white/90 drop-shadow sm:block sm:text-lg">
               Pick a subject and topic, choose how many questions you want, and get a timed
               quiz in seconds. Every wrong answer comes with a simple explanation from the AI
               tutor.
@@ -285,12 +288,14 @@ function QuizConfigForm() {
         </div>
       </div>
 
-      {/* ============ RIGHT: simple form (40%) ============ */}
-      <div className="flex items-center justify-center bg-white px-6 py-10 sm:px-12 lg:h-full lg:w-[40%] lg:overflow-y-auto lg:px-14">
-        <form onSubmit={handleStartQuiz} className="w-full max-w-md space-y-6">
+      {/* ============ RIGHT / BOTTOM: form ============ */}
+      <div className="relative z-10 -mt-6 flex flex-1 items-start justify-center rounded-t-3xl bg-white px-5 pb-[max(2rem,env(safe-area-inset-bottom))] pt-8 sm:px-12 sm:py-10 lg:mt-0 lg:h-full lg:w-[40%] lg:flex-none lg:items-center lg:overflow-y-auto lg:rounded-none lg:px-14">
+        <form onSubmit={handleStartQuiz} className="w-full max-w-md space-y-5 sm:space-y-6">
           <div>
-            <h2 className="text-4xl font-extrabold tracking-tight text-black">Set up your quiz</h2>
-            <p className="mt-2 text-stone-600">Choose your options to get started.</p>
+            <h2 className="text-3xl font-extrabold tracking-tight text-black sm:text-4xl">
+              Set up your quiz
+            </h2>
+            <p className="mt-1.5 text-stone-600 sm:mt-2">Choose your options to get started.</p>
           </div>
 
           {/* Subject */}
@@ -334,16 +339,18 @@ function QuizConfigForm() {
           {/* Number of questions */}
           <div>
             <span className="block text-sm font-bold text-black">Number of Questions</span>
-            <div className="mt-2 grid grid-cols-3 gap-3">
+            <div className="mt-2 grid grid-cols-3 gap-2.5 sm:gap-3">
               {COUNTS.map((num) => (
                 <button
                   key={num}
                   type="button"
                   onClick={() => setCount(num)}
                   aria-pressed={count === num}
+                  aria-label={`${num} questions`}
                   className={optionClass(count === num)}
                 >
-                  {num} Questions
+                  {num}
+                  <span className="hidden sm:inline"> Questions</span>
                 </button>
               ))}
             </div>
@@ -352,7 +359,7 @@ function QuizConfigForm() {
           {/* Difficulty */}
           <div>
             <span className="block text-sm font-bold text-black">Difficulty Level</span>
-            <div className="mt-2 grid grid-cols-3 gap-3">
+            <div className="mt-2 grid grid-cols-3 gap-2.5 sm:gap-3">
               {LEVELS.map((lvl) => (
                 <button
                   key={lvl}
@@ -379,7 +386,7 @@ function QuizConfigForm() {
           <button
             type="submit"
             disabled={loading || !subject || !topic}
-            className="inline-flex w-full items-center justify-center gap-2.5 rounded-md bg-black py-4 text-base font-semibold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center gap-2.5 rounded-md bg-black py-4 text-base font-semibold text-white transition hover:bg-stone-800 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? (
               <>
@@ -397,7 +404,7 @@ function QuizConfigForm() {
           <div className="text-center">
             <Link
               href="/"
-              className="inline-flex items-center gap-1.5 text-sm text-stone-500 transition-colors hover:text-black"
+              className="inline-flex items-center gap-1.5 py-1 text-sm text-stone-500 transition-colors hover:text-black"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Back to home
