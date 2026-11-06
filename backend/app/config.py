@@ -1,69 +1,69 @@
+import os
+from typing import List
+from dotenv import load_dotenv
 
-from functools import lru_cache
-from typing import Literal
+# Load .env file if present
+load_dotenv()
 
-from pydantic import model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
-
-class Settings(BaseSettings):
-
-    # Application information
+class Settings:
     PROJECT_NAME: str = "AI-Powered Smart Assessment & Quiz Engine"
     VERSION: str = "1.0.0"
     API_V1_PREFIX: str = "/api/v1"
+    
+    # AI API Keys (Supports single or multi-key comma separated or numbered keys)
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
-    # AI provider API keys
-    GEMINI_API_KEY: str = ""
-    GROQ_API_KEY: str = ""
-    OPENAI_API_KEY: str = ""
+    # CORS & Database
+    FRONTEND_ORIGINS: str = os.getenv("FRONTEND_ORIGINS", "http://localhost:3000")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+    DB_ECHO: bool = os.getenv("DB_ECHO", "false").lower() == "true"
 
-    # Supported AI providers
-    DEFAULT_PROVIDER: Literal[
-        "mock", "gemini", "groq", "openai"
-    ] = "mock"
+    @property
+    def GROQ_API_KEYS(self) -> List[str]:
+        """Returns all configured Groq API keys for load balancing and rate limit failover."""
+        keys = []
+        raw = os.getenv("GROQ_API_KEYS", "") or os.getenv("GROQ_API_KEY", "")
+        if raw:
+            for k in raw.split(","):
+                k_clean = k.strip().strip('"').strip("'")
+                if k_clean and k_clean not in keys:
+                    keys.append(k_clean)
+        # Also check numbered environment variables GROQ_API_KEY_1, GROQ_API_KEY_2, etc.
+        idx = 1
+        while True:
+            numbered = os.getenv(f"GROQ_API_KEY_{idx}")
+            if not numbered:
+                break
+            n_clean = numbered.strip().strip('"').strip("'")
+            if n_clean and n_clean not in keys:
+                keys.append(n_clean)
+            idx += 1
+        return keys
 
-    # Frontend CORS configuration
-    FRONTEND_ORIGINS: str = "http://localhost:3000"
+    @property
+    def GEMINI_API_KEYS(self) -> List[str]:
+        """Returns all configured Gemini API keys for failover."""
+        keys = []
+        raw = os.getenv("GEMINI_API_KEYS", "") or os.getenv("GEMINI_API_KEY", "")
+        if raw:
+            for k in raw.split(","):
+                k_clean = k.strip().strip('"').strip("'")
+                if k_clean and k_clean not in keys:
+                    keys.append(k_clean)
+        idx = 1
+        while True:
+            numbered = os.getenv(f"GEMINI_API_KEY_{idx}")
+            if not numbered:
+                break
+            n_clean = numbered.strip().strip('"').strip("'")
+            if n_clean and n_clean not in keys:
+                keys.append(n_clean)
+            idx += 1
+        return keys
+    
+    # Mode: "mock", "gemini", "groq", "openai"
+    DEFAULT_PROVIDER: str = os.getenv("DEFAULT_PROVIDER", "groq" if os.getenv("GROQ_API_KEY") else ("gemini" if os.getenv("GEMINI_API_KEY") else "mock"))
 
-    # PostgreSQL database configuration
-    DATABASE_URL: str = ""
-    DB_ECHO: bool = False
-
-    # Environment configuration
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=True,
-        extra="ignore",
-    )
-
-    # Validate selected AI provider
-    @model_validator(mode="after")
-    def validate_provider_key(self):
-
-        provider_keys = {
-            "gemini": self.GEMINI_API_KEY,
-            "groq": self.GROQ_API_KEY,
-            "openai": self.OPENAI_API_KEY,
-        }
-
-        if self.DEFAULT_PROVIDER != "mock":
-
-            api_key = provider_keys[self.DEFAULT_PROVIDER]
-
-            if not api_key.strip():
-                raise ValueError(
-                    f"{self.DEFAULT_PROVIDER.upper()} API key is missing. "
-                    "Please configure it in your .env file."
-                )
-
-        return self
-
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()
-
-
-settings = get_settings()
+settings = Settings()

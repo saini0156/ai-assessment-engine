@@ -42,7 +42,7 @@ class QuizGenerateRequest(BaseModel):
     subject: str = Field(..., min_length=1, max_length=100, example="Computer Science")
     topic: str = Field(..., min_length=1, max_length=150, example="Object-Oriented Programming")
     # Worst-case: Protect against negative counts or massive counts
-    count: int = Field(5, ge=1, le=20, example=5)
+    count: int = Field(5, ge=1, le=50, example=5)
     difficulty: str = Field("Medium", example="Medium")
 
     @field_validator("difficulty")
