@@ -272,7 +272,7 @@ export default function QuizResultsPage({ params }: { params: Promise<{ id: stri
                     className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-black px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-800 sm:w-auto"
                   >
                     <Sparkles className="h-4 w-4" />
-                    Explain My Mistake
+                    Learn with AI Tutor
                   </button>
                 </div>
               )}
