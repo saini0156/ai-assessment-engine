@@ -89,7 +89,7 @@ export function Navbar() {
           <Link href="/" className="flex items-center gap-2">
             <GraduationCap className={`h-8 w-8 transition-colors ${logoColor}`} />
             <span className={`font-serif text-xl font-bold transition-colors ${logoColor}`}>
-              Quiz<span className={logoAccent}>Pro</span>
+              Mind<span className={logoAccent}>Mark</span>
             </span>
           </Link>
 

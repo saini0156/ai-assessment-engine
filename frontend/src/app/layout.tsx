@@ -11,7 +11,7 @@ const serif = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "QuizPro | Syllabus to Practice Quizzes",
+  title: "MindMark | Syllabus to Practice Quizzes",
   description: "Turn a syllabus into practice quizzes with instant, plain-language explanations.",
 };
 

@@ -211,7 +211,7 @@ export default function QuizPlayerPage({
             <div className="hidden items-center gap-2 sm:flex">
               <GraduationCap className="h-6 w-6 text-black" />
               <span className="text-base font-extrabold uppercase tracking-[0.18em] text-black">
-                QuizPro
+                MindMark
               </span>
             </div>
             <span className="hidden h-6 w-px bg-stone-200 sm:block" />
