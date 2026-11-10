@@ -8,13 +8,13 @@ export type FAQ = {
 export const faqs: FAQ[] = [
   {
     category: "Getting Started",
-    question: "What is QuizPro?",
+    question: "What is MindMark?",
     answer:
-      "QuizPro is an online learning and assessment platform that helps you create, attempt, and review quizzes to test your knowledge and improve your preparation.",
+      "MindMark is an online learning and assessment platform that helps you create, attempt, and review quizzes to test your knowledge and improve your preparation.",
   },
   {
     category: "Getting Started",
-    question: "Do I need an account to use QuizPro?",
+    question: "Do I need an account to use MindMark?",
     answer:
       "Some features may be available without an account, while features such as saving quiz history or accessing your personal results may require you to sign in.",
   },
@@ -28,7 +28,7 @@ export const faqs: FAQ[] = [
     category: "Quizzes",
     question: "Can I create my own quizzes?",
     answer:
-      "QuizPro is designed to support quiz creation. The available creation options depend on the features enabled on the platform.",
+      "MindMark is designed to support quiz creation. The available creation options depend on the features enabled on the platform.",
   },
   {
     category: "Quizzes",
@@ -64,7 +64,7 @@ export const faqs: FAQ[] = [
     category: "Account & Privacy",
     question: "Is my personal information safe?",
     answer:
-      "We take reasonable measures to protect information processed through QuizPro. You can read our Privacy Policy to understand what information we collect, how it is used, and your available choices.",
+      "We take reasonable measures to protect information processed through MindMark. You can read our Privacy Policy to understand what information we collect, how it is used, and your available choices.",
   },
   {
     category: "Account & Privacy",
@@ -80,7 +80,7 @@ export const faqs: FAQ[] = [
   },
   {
     category: "Support",
-    question: "How can I contact QuizPro?",
+    question: "How can I contact MindMark?",
     answer:
       "For assistance or questions, contact us at [YOUR SUPPORT EMAIL]. We will update this answer with the official support contact details.",
   },

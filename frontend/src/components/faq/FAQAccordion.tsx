@@ -94,7 +94,7 @@ export default function FAQAccordion({
 
           <Reveal direction="up" delay={0.2}>
             <p className="mt-4 max-w-lg text-sm leading-6 text-[#53647e] sm:text-base">
-              Find answers to common questions about QuizPro,
+              Find answers to common questions about MindMark,
               quizzes, your account, and how to get started.
             </p>
           </Reveal>
