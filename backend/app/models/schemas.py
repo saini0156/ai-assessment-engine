@@ -1,5 +1,5 @@
 import re
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from typing import List, Dict, Optional, Any
 
 # =========================================================================
@@ -44,6 +44,7 @@ class QuizGenerateRequest(BaseModel):
     # Worst-case: Protect against negative counts or massive counts
     count: int = Field(5, ge=1, le=50, example=5)
     difficulty: str = Field("Medium", example="Medium")
+    language: Optional[str] = Field("Auto", example="Auto")
 
     @field_validator("difficulty")
     @classmethod
@@ -168,3 +169,94 @@ class TutorExplainResponse(BaseModel):
     simplified_explanation: str = Field(default="Explanation unavailable.")
     memory_tip: str = Field(default="Focus on the core concept.")
     real_world_example: str = Field(default="Consider how this applies in everyday systems.")
+
+
+class QuizHistoryItem(BaseModel):
+    quiz_session_id: str
+    subject: str
+    topic: str
+    difficulty: str
+    total_questions: int
+    status: str
+    score_percentage: float = 0.0
+    started_at: Optional[str] = None
+    submitted_at: Optional[str] = None
+
+
+# =========================================================================
+# --- 5. Authentication & User Management Models ---
+# =========================================================================
+
+class UserRegisterRequest(BaseModel):
+    full_name: Optional[str] = Field(None, min_length=2, max_length=100, example="John Doe")
+    name: Optional[str] = Field(None, min_length=2, max_length=100, example="John Doe")
+    email: str = Field(..., min_length=5, max_length=255, example="student@example.com")
+    password: str = Field(..., min_length=6, max_length=128, example="password123")
+    role: str = Field("student", example="student")
+
+    @model_validator(mode="before")
+    @classmethod
+    def sync_name_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            name_val = data.get("full_name") or data.get("name")
+            if not name_val:
+                raise ValueError("Either 'full_name' or 'name' is required.")
+            data["full_name"] = str(name_val).strip()
+            data["name"] = str(name_val).strip()
+        return data
+
+    @field_validator("email")
+    @classmethod
+    def sanitize_email(cls, v: str) -> str:
+        return v.strip().lower()
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: str) -> str:
+        val = v.strip().lower()
+        if val not in ["admin", "student"]:
+            return "student"
+        return val
+
+
+class UserLoginRequest(BaseModel):
+    email: str = Field(..., min_length=5, max_length=255, example="student@example.com")
+    password: str = Field(..., min_length=1, max_length=128, example="password123")
+
+    @field_validator("email")
+    @classmethod
+    def sanitize_email(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    full_name: str
+    name: Optional[str] = None
+    email: str
+    role: str
+    is_active: bool = True
+    created_at: Optional[Any] = None
+
+    @model_validator(mode="after")
+    def populate_name(self) -> "UserResponse":
+        if not self.name:
+            self.name = self.full_name
+        return self
+
+
+class AuthTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+
+class UserProfileResponse(BaseModel):
+    status: str = "success"
+    user: UserResponse
+
+
+class AuthLogoutResponse(BaseModel):
+    status: str = "success"
+    message: str = "Logged out successfully"

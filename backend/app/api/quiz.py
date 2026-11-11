@@ -1,5 +1,10 @@
+import logging
+from typing import List
 from fastapi import APIRouter, HTTPException
+
+logger = logging.getLogger(__name__)
 from app.models.schemas import (
+    QuizHistoryItem,
     QuizGenerateRequest,
     QuizGenerateResponse,
     PublicQuestion,
@@ -9,7 +14,10 @@ from app.models.schemas import (
 )
 from app.services.llm_service import llm_service
 from app.services.session_store import session_store
-from app.services.db_service import db_service
+try:
+    from app.services.db_service import db_service
+except ImportError:
+    db_service = None
 
 router = APIRouter(prefix="/quiz", tags=["Quiz"])
 
@@ -18,21 +26,24 @@ async def generate_quiz(request: QuizGenerateRequest):
     """
     Generate multiple choice questions.
     ZERO-LEAK SECURITY: Correct answers and explanations are stored in backend memory
-    and PostgreSQL, and NEVER sent to the client browser until submission.
+    and NEVER sent to the client browser until submission.
     """
     # Generate full quiz session with internal answer keys
     internal_session = llm_service.generate_quiz(
         subject=request.subject,
         topic=request.topic,
         count=request.count,
-        difficulty=request.difficulty
+        difficulty=request.difficulty,
+        language=getattr(request, "language", "Auto")
     )
     
-    # 1. Store securely in server-side in-memory store
+    # Store securely in server-side session store
     session_store.save_session(internal_session)
-
-    # 2. Persist session and question snapshots to PostgreSQL
-    db_service.persist_quiz_session(internal_session, difficulty=request.difficulty)
+    if db_service:
+        try:
+            db_service.persist_quiz_session(internal_session, difficulty=request.difficulty)
+        except Exception as e:
+            logger.exception("Failed to persist quiz session snapshot: %s", e)
     
     # Create sanitized public questions (NO answers, NO explanations)
     public_questions = [
@@ -56,8 +67,7 @@ async def generate_quiz(request: QuizGenerateRequest):
 @router.post("/submit", response_model=QuizSubmitResponse)
 async def submit_quiz(request: QuizSubmitRequest):
     """
-    Submit student answers, grade the test, release answer keys and explanations,
-    and persist results to PostgreSQL.
+    Submit student answers, grade the test, and release answer keys and explanations.
     """
     session = session_store.get_session(request.quiz_session_id)
     if not session:
@@ -100,13 +110,16 @@ async def submit_quiz(request: QuizSubmitRequest):
     else:
         feedback = "Keep practicing! Use the 'Explain My Mistake' tutor on the questions you missed to master these fundamentals."
         
-    # Record student answers and score permanently in PostgreSQL
-    db_service.record_quiz_submission(
-        quiz_session_id=session.quiz_session_id,
-        answers=request.answers,
-        reviews=reviews,
-        score_percentage=score_percentage
-    )
+    if db_service:
+        try:
+            db_service.record_quiz_submission(
+                quiz_session_id=session.quiz_session_id,
+                answers=request.answers,
+                reviews=reviews,
+                score_percentage=score_percentage
+            )
+        except Exception as e:
+            logger.exception("Failed to record quiz submission to database: %s", e)
 
     return QuizSubmitResponse(
         quiz_session_id=session.quiz_session_id,
@@ -115,4 +128,50 @@ async def submit_quiz(request: QuizSubmitRequest):
         total_questions=total_questions,
         reviews=reviews,
         ai_feedback=feedback
+    )
+
+
+@router.get("/history", response_model=List[QuizHistoryItem])
+def get_quiz_history(limit: int = 50):
+    """
+    Fetch persistent quiz history and past scores from Supabase PostgreSQL.
+    No login required: lists recent student attempts and assessments.
+    """
+    if db_service:
+        try:
+            return db_service.get_quiz_history(limit=limit)
+        except Exception as e:
+            logger.exception("Failed to fetch quiz history from database: %s", e)
+    return []
+
+
+@router.get("/{quiz_session_id}", response_model=QuizGenerateResponse)
+async def get_quiz_by_id(quiz_session_id: str):
+    """
+    Fetch an active quiz by ID.
+    ZERO-LEAK SECURITY: Returns public questions ONLY (no answers, no explanations).
+    Allows quizzes to be shareable and refresh-proof.
+    """
+    session = session_store.get_session(quiz_session_id)
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Quiz session '{quiz_session_id}' not found or has expired."
+        )
+
+    public_questions = [
+        PublicQuestion(
+            id=q.id,
+            question=q.question,
+            options=q.options
+        )
+        for q in session.questions.values()
+    ]
+
+    return QuizGenerateResponse(
+        quiz_session_id=session.quiz_session_id,
+        subject=session.subject,
+        topic=session.topic,
+        total_questions=len(public_questions),
+        questions=public_questions
     )
