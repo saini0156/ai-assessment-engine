@@ -1,9 +1,15 @@
 import os
+from pathlib import Path
 from typing import List
 from dotenv import load_dotenv
 
-# Load .env file if present
-load_dotenv()
+# Search for .env in backend root first, then current working directory
+_backend_dir = Path(__file__).resolve().parent.parent
+_env_path = _backend_dir / ".env"
+if _env_path.exists():
+    load_dotenv(dotenv_path=_env_path)
+else:
+    load_dotenv()
 
 class Settings:
     PROJECT_NAME: str = "AI-Powered Smart Assessment & Quiz Engine"
@@ -19,6 +25,11 @@ class Settings:
     FRONTEND_ORIGINS: str = os.getenv("FRONTEND_ORIGINS", "http://localhost:3000")
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")
     DB_ECHO: bool = os.getenv("DB_ECHO", "false").lower() == "true"
+
+    # Authentication & JWT Security
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "quizengine-jwt-super-secret-key-production-2026")
+    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 
     @property
     def GROQ_API_KEYS(self) -> List[str]:

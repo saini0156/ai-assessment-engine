@@ -1,7 +1,10 @@
+import logging
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
 from app.models.schemas import SyllabusUploadResponse
 from app.services.pdf_service import pdf_service
 from app.services.llm_service import llm_service
+
+logger = logging.getLogger(__name__)
 
 try:
     from app.services.db_service import db_service
@@ -22,8 +25,8 @@ def get_subjects():
     if db_service:
         try:
             return db_service.get_all_subjects()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception("Failed to fetch subjects from database: %s", e)
     return []
 
 
@@ -70,6 +73,19 @@ async def upload_syllabus_pdf(
             cleaned_text = f"Syllabus for {subject} covering foundational concepts."
 
         topics = llm_service.extract_topics(subject=subject, text=cleaned_text)
+
+        # Persist syllabus document, text chunks, and extracted topics to PostgreSQL database
+        if db_service:
+            try:
+                db_service.persist_uploaded_syllabus(
+                    subject_name=subject,
+                    file_name=file.filename,
+                    file_bytes=content_bytes,
+                    text_content=cleaned_text,
+                    topics=topics,
+                )
+            except Exception as e:
+                logger.exception("Failed to persist syllabus to database: %s", e)
 
         return SyllabusUploadResponse(
             status="success",
