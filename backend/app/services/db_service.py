@@ -12,7 +12,7 @@ from app.models.question import Question
 from app.models.quiz_session import QuizSession
 from app.models.quiz_session_question import QuizSessionQuestion
 from app.models.quiz_answer import QuizAnswer
-from app.models.schemas import InternalQuizSession, QuestionReview
+from app.models.schemas import InternalQuizSession, QuestionReview, InternalQuestion
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +298,94 @@ class DatabaseService:
             db.rollback()
             logger.error(f"Failed to record quiz submission to DB: {e}", exc_info=True)
             return False
+        finally:
+            db.close()
+
+    def get_internal_session(self, quiz_session_id: str) -> Optional[InternalQuizSession]:
+        """
+        Reconstructs an InternalQuizSession directly from PostgreSQL snapshots.
+        Ensures active quizzes and grading remain intact even if the server restarted.
+        """
+        db = SessionLocal()
+        try:
+            qs = (
+                db.query(QuizSession, Subject.name, Topic.name)
+                .outerjoin(Subject, QuizSession.subject_id == Subject.id)
+                .outerjoin(Topic, QuizSession.topic_id == Topic.id)
+                .filter(QuizSession.id == quiz_session_id)
+                .first()
+            )
+            if not qs:
+                return None
+
+            session_record, subject_name, topic_name = qs
+
+            # Fetch question snapshots ordered by question_order
+            session_questions = (
+                db.query(QuizSessionQuestion)
+                .filter_by(session_id=quiz_session_id)
+                .order_by(QuizSessionQuestion.question_order)
+                .all()
+            )
+
+            if not session_questions:
+                return None
+
+            questions_dict: Dict[str, InternalQuestion] = {}
+            for idx, sq in enumerate(session_questions, start=1):
+                qid = f"q_{idx}"
+                questions_dict[qid] = InternalQuestion(
+                    id=qid,
+                    question=sq.question_text_snapshot,
+                    options=sq.options_snapshot,
+                    correct_option=sq.correct_option_snapshot,
+                    explanation=sq.explanation_snapshot or f"Option {sq.correct_option_snapshot} is the verified answer.",
+                )
+
+            return InternalQuizSession(
+                quiz_session_id=session_record.id,
+                subject=subject_name or "General",
+                topic=topic_name or "General Assessment",
+                difficulty=(session_record.difficulty or "Medium").capitalize(),
+                questions=questions_dict,
+            )
+        except Exception as e:
+            logger.error(f"Failed to reconstruct session '{quiz_session_id}' from DB: {e}", exc_info=True)
+            return None
+        finally:
+            db.close()
+
+    def get_quiz_history(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Retrieves recent quiz sessions with their scores, subject, topic, and completion status.
+        """
+        db = SessionLocal()
+        try:
+            sessions = (
+                db.query(QuizSession, Subject.name, Topic.name)
+                .outerjoin(Subject, QuizSession.subject_id == Subject.id)
+                .outerjoin(Topic, QuizSession.topic_id == Topic.id)
+                .order_by(QuizSession.started_at.desc())
+                .limit(limit)
+                .all()
+            )
+            history = []
+            for qs, subj_name, topic_name in sessions:
+                history.append({
+                    "quiz_session_id": qs.id,
+                    "subject": subj_name or "General",
+                    "topic": topic_name or "General Assessment",
+                    "difficulty": (qs.difficulty or "Medium").capitalize(),
+                    "total_questions": qs.total_questions,
+                    "status": qs.status,
+                    "score_percentage": qs.score_percentage if qs.score_percentage is not None else 0.0,
+                    "started_at": qs.started_at.isoformat() if qs.started_at else None,
+                    "submitted_at": qs.submitted_at.isoformat() if qs.submitted_at else None,
+                })
+            return history
+        except Exception as e:
+            logger.error(f"Failed to fetch quiz history: {e}", exc_info=True)
+            return []
         finally:
             db.close()
 

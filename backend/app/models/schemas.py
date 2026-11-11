@@ -168,3 +168,15 @@ class TutorExplainResponse(BaseModel):
     simplified_explanation: str = Field(default="Explanation unavailable.")
     memory_tip: str = Field(default="Focus on the core concept.")
     real_world_example: str = Field(default="Consider how this applies in everyday systems.")
+
+
+class QuizHistoryItem(BaseModel):
+    quiz_session_id: str
+    subject: str
+    topic: str
+    difficulty: str
+    total_questions: int
+    status: str
+    score_percentage: float = 0.0
+    started_at: Optional[str] = None
+    submitted_at: Optional[str] = None
