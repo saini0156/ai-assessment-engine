@@ -82,3 +82,26 @@ export interface TutorExplainResponse {
   memory_tip: string;
   real_world_example: string;
 }
+
+// 5. Authentication (frontend-first: confirm these with the backend partner)
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface SignupRequest {
+  name: string;
+  email: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  user: AuthUser;
+}

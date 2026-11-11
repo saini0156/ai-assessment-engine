@@ -1,17 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import Image from "next/image";
 import {
   ArrowRight,
   ArrowUp,
-  GraduationCap,
   Home,
   ListChecks,
+  LogOut,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
+import { clearSession, getSession } from "@/lib/session";
+import { AuthResponse } from "@/types";
 
 const links = [
   { href: "/", label: "Home" },
@@ -24,6 +27,9 @@ export function Navbar() {
   const router = useRouter();
   const isHome = pathname === "/";
   const [scrolled, setScrolled] = useState(false);
+  const [session, setSession] = useState<AuthResponse | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -32,11 +38,32 @@ export function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Re-read the session on every page change (so it updates right after login)
+  useEffect(() => {
+    setSession(getSession());
+    setMenuOpen(false);
+  }, [pathname]);
+
+  // Close the account menu on outside click or Esc
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href === "/quiz/new" ? "/quiz" : href);
 
-  // Hidden on the quiz builder (/quiz/new) and the test player (/quiz/<id>)
-  if (/^\/quiz\/[^/]+$/.test(pathname)) return null;
+  // Hidden on login, signup, the quiz builder (/quiz/new) and the test player (/quiz/<id>)
+  if (/^\/(login|signup)$|^\/quiz\/[^/]+$/.test(pathname)) return null;
 
   // Desktop only: transparent on home before scrolling
   const transparent = isHome && !scrolled;
@@ -51,18 +78,28 @@ export function Navbar() {
       ? "border-b border-transparent bg-transparent"
       : "border-b border-transparent bg-transparent sm:border-stone-200 sm:bg-white/90 sm:shadow-sm sm:backdrop-blur-md";
 
-  // On home mobile the logo is always white (it sits on the hero image)
-  const logoColor = !isHome
-    ? "text-stone-900"
+  // "Log in" link colours follow the same on-hero / off-hero rules
+  const loginColor = !isHome
+    ? "text-stone-700 hover:text-black"
     : transparent
-      ? "text-white"
-      : "text-white sm:text-stone-900";
+      ? "text-white hover:text-white/80"
+      : "text-white hover:text-white/80 sm:text-stone-700 sm:hover:text-black";
 
-  const logoAccent = !isHome
-    ? "text-stone-500"
+  // Avatar circle colours
+  const avatarColor = !isHome
+    ? "bg-black text-white hover:bg-stone-800"
     : transparent
-      ? "text-white/70"
-      : "text-white/70 sm:text-stone-500";
+      ? "bg-white text-black hover:bg-stone-100"
+      : "bg-white text-black hover:bg-stone-100 sm:bg-black sm:text-white sm:hover:bg-stone-800";
+
+  const initial = session?.user.name?.trim().charAt(0).toUpperCase() || "U";
+
+  const handleLogout = () => {
+    clearSession();
+    setSession(null);
+    setMenuOpen(false);
+    router.push("/");
+  };
 
   const scrollTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
 
@@ -85,12 +122,30 @@ export function Navbar() {
         className={`${position} inset-x-0 top-0 z-50 w-full transition-all duration-300 ${surface}`}
       >
         <div className="flex h-16 w-full items-center justify-between px-4 sm:px-8 lg:px-12">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2">
-            <GraduationCap className={`h-8 w-8 transition-colors ${logoColor}`} />
-            <span className={`font-serif text-xl font-bold transition-colors ${logoColor}`}>
-              Mind<span className={logoAccent}>Mark</span>
-            </span>
+          {/* Logo: white over the hero, black on the white bar */}
+          <Link href="/" aria-label="MindMark home" className="flex items-center">
+            {/* White logo */}
+            <Image
+              src="/images/logowhite.png"
+              alt="MindMark"
+              width={160}
+              height={56}
+              priority
+              className={`h-12 w-auto object-contain sm:h-14 ${
+                !isHome ? "hidden" : transparent ? "block" : "block sm:hidden"
+              }`}
+            />
+            {/* Black logo */}
+            <Image
+              src="/images/logoblack.png"
+              alt="MindMark"
+              width={160}
+              height={56}
+              priority
+              className={`h-12 w-auto rounded-lg object-contain sm:h-14 ${
+                !isHome ? "block" : transparent ? "hidden" : "hidden sm:block"
+              }`}
+            />
           </Link>
 
           {/* Desktop links */}
@@ -117,18 +172,59 @@ export function Navbar() {
             })}
           </nav>
 
-          {/* Desktop CTA */}
-          <Link
-            href="/quiz/new"
-            className={`hidden items-center gap-2 rounded-full px-5 py-2.5 text-lg font-semibold transition-colors sm:inline-flex ${
-              transparent
-                ? "bg-white text-black hover:bg-stone-100"
-                : "bg-black text-white hover:bg-stone-800"
-            }`}
-          >
-            Take a Quiz
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
+          {/* Right side: account + desktop CTA */}
+          <div className="flex items-center gap-3 sm:gap-4">
+            {session ? (
+              <div ref={menuRef} className="relative">
+                <button
+                  onClick={() => setMenuOpen((o) => !o)}
+                  aria-label="Account menu"
+                  aria-expanded={menuOpen}
+                  className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition-colors ${avatarColor}`}
+                >
+                  {initial}
+                </button>
+
+                {menuOpen && (
+                  <div className="absolute right-0 mt-2 w-60 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-xl">
+                    <div className="border-b border-stone-100 px-4 py-3">
+                      <p className="truncate text-sm font-bold text-stone-900">
+                        {session.user.name}
+                      </p>
+                      <p className="truncate text-xs text-stone-500">{session.user.email}</p>
+                    </div>
+                    <button
+                      onClick={handleLogout}
+                      className="flex w-full items-center gap-2.5 px-4 py-3 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Log out
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <Link
+                href="/login"
+                className={`text-base font-semibold transition-colors sm:text-lg ${loginColor}`}
+              >
+                Log in
+              </Link>
+            )}
+
+            {/* Desktop CTA */}
+            <Link
+              href="/quiz/new"
+              className={`hidden items-center gap-2 rounded-full px-5 py-2.5 text-lg font-semibold transition-colors sm:inline-flex ${
+                transparent
+                  ? "bg-white text-black hover:bg-stone-100"
+                  : "bg-black text-white hover:bg-stone-800"
+              }`}
+            >
+              Take a Quiz
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
         </div>
       </header>
 
