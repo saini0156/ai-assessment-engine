@@ -3,6 +3,7 @@ from typing import List
 from fastapi import APIRouter, HTTPException
 
 logger = logging.getLogger(__name__)
+
 from app.models.schemas import (
     QuizHistoryItem,
     QuizGenerateRequest,
@@ -20,6 +21,7 @@ except ImportError:
     db_service = None
 
 router = APIRouter(prefix="/quiz", tags=["Quiz"])
+
 
 @router.post("/generate", response_model=QuizGenerateResponse)
 async def generate_quiz(request: QuizGenerateRequest):
