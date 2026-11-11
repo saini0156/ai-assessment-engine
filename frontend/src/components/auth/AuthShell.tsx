@@ -12,7 +12,7 @@ export function AuthShell({
   headline,
   text,
   children,
-  image = "/images/auth-bg.jpg",
+  image = "/images/auth-bg1.jpg",
 }: AuthShellProps) {
   return (
     <div className="fixed inset-x-0 top-0 z-[60] flex h-dvh flex-col overflow-y-auto bg-white lg:flex-row lg:overflow-hidden">
@@ -26,10 +26,14 @@ export function AuthShell({
           sizes="(min-width: 1024px) 60vw, 100vw"
           className="object-cover"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/25 to-black/10" />
+
+        {/* Base dim over the whole image */}
+        <div className="absolute inset-0 bg-black/40" />
+        {/* Extra darkness at top (logo) and bottom (text) */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/20 to-black/80" />
 
         <div className="relative z-10 flex h-full flex-col justify-between gap-6 p-6 sm:p-10 lg:p-14">
-                    <Link href="/" aria-label="MindMark home" className="inline-flex self-start">
+          <Link href="/" aria-label="MindMark home" className="inline-flex self-start">
             <Image
               src="/images/logowhite.png"
               alt="MindMark"
@@ -44,7 +48,7 @@ export function AuthShell({
             <h1 className="text-3xl font-extrabold leading-[1.1] tracking-tight text-white drop-shadow-md sm:text-4xl xl:text-6xl">
               {headline}
             </h1>
-            <p className="hidden max-w-xl text-base leading-relaxed text-white/90 drop-shadow sm:block sm:text-lg">
+            <p className="hidden max-w-xl text-base leading-relaxed text-white drop-shadow sm:block sm:text-lg">
               {text}
             </p>
           </div>
