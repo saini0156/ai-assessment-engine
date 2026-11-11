@@ -1,78 +1,221 @@
 # AI-Powered Smart Assessment & Quiz Engine
 
-> An end-to-end intelligent assessment platform featuring syllabus PDF ingestion, dynamic multiple-choice question generation with distractor engineering, zero-leak anti-cheat delivery, and an AI tutor ("Explain My Mistake") that delivers analogy-based feedback.
+> An end-to-end intelligent assessment platform: syllabus PDF ingestion, dynamic multiple-choice question generation with distractor engineering, zero-leak anti-cheat delivery, and an AI tutor ("Explain My Mistake") that gives analogy-based feedback.
 
 ---
 
-## 1. Project Directory Structure
+## Project Structure
 
 ```
-quiz-interview-platform/
-├── backend/                       # Python & FastAPI Backend (Nitish)
+ai-assessment-engine/
+├── backend/                       # Python & FastAPI backend
 │   ├── app/
-│   │   ├── main.py                # FastAPI entry, CORS, routers
-│   │   ├── config.py              # Environment settings & fallback configuration
+│   │   ├── main.py                # FastAPI entry point, CORS, routers
+│   │   ├── config.py              # Environment settings & fallback config
 │   │   ├── api/
 │   │   │   ├── syllabus.py        # POST /api/v1/syllabus/upload-pdf
-│   │   │   ├── quiz.py            # POST /api/v1/quiz/generate, submit
+│   │   │   ├── quiz.py            # POST /api/v1/quiz/generate, /submit
 │   │   │   └── tutor.py           # POST /api/v1/tutor/explain
 │   │   ├── models/schemas.py      # Pydantic schemas
 │   │   ├── services/
 │   │   │   ├── pdf_service.py     # pypdf text extraction
-│   │   │   ├── llm_service.py     # Gemini 2.5 Flash + Offline Mock Engine
-│   │   │   └── session_store.py   # Zero-Leak server-side session cache
+│   │   │   ├── llm_service.py     # Gemini 2.5 Flash + offline mock engine
+│   │   │   └── session_store.py   # Zero-leak server-side session cache
 │   │   └── prompts/templates.py   # Prompt engineering templates
 │   ├── requirements.txt           # Python dependencies
 │   ├── test_flow.py               # Automated end-to-end test script
-│   └── run.py                     # Server starter script (port 8000)
+│   └── run.py                     # Server starter (port 8000)
 │
-├── frontend/                      # Next.js 15 & Tailwind CSS Frontend (Rahul)
+├── frontend/                      # Next.js & Tailwind CSS frontend
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── admin/page.tsx     # Screen 1: Admin Syllabus Upload
-│   │   │   ├── quiz/new/page.tsx  # Screen 2: Quiz Configuration
-│   │   │   ├── quiz/[id]/page.tsx # Screen 3: Timed Quiz Player (Timer, A/B/C/D)
-│   │   │   └── quiz/[id]/results/page.tsx # Screen 4: Scorecard & AI Review
+│   │   │   ├── admin/page.tsx                 # Screen 1: Admin syllabus upload
+│   │   │   ├── quiz/new/page.tsx              # Screen 2: Quiz configuration
+│   │   │   ├── quiz/[id]/page.tsx             # Screen 3: Timed quiz player
+│   │   │   └── quiz/[id]/results/page.tsx     # Screen 4: Scorecard & AI review
 │   │   ├── components/
-│   │   │   ├── tutor/TutorModal.tsx # Screen 5: "Explain My Mistake" Modal
-│   │   │   ├── quiz/ (Timer, QuestionCard, ScoreRing)
-│   │   │   └── admin/ (Dropzone, TopicCard)
-│   │   ├── lib/api.ts             # Centralized typed fetch API client
-│   │   └── types/index.ts         # TypeScript models mirroring backend schemas
+│   │   │   ├── tutor/TutorModal.tsx           # Screen 5: "Explain My Mistake"
+│   │   │   ├── quiz/                          # Timer, QuestionCard, ScoreRing
+│   │   │   └── admin/                         # Dropzone, TopicCard
+│   │   ├── lib/api.ts                         # Typed fetch API client
+│   │   └── types/index.ts                     # TS models mirroring backend schemas
 │   └── package.json
 │
-└── README.md                      # Unified Project Documentation
+├── .gitignore
+└── README.md
 ```
 
 ---
 
-## 2. Quick Start Guide
+## Table of Contents
 
-### Step 1: Start the Backend (Nitish)
-```powershell
-# Open terminal inside project root
-cd backend
-.\venv\Scripts\python.exe run.py
+- [Project Structure](#project-structure)
+- [Features](#features)
+- [How It Works](#how-it-works)
+- [Tech Stack](#tech-stack)
+- [Getting Started](#getting-started)
+- [Configuration](#configuration)
+- [API Reference](#api-reference)
+- [Zero-Leak Anti-Cheat Design](#zero-leak-anti-cheat-design)
+- [Testing](#testing)
+- [Team](#team)
+- [Roadmap](#roadmap)
+- [License](#license)
+
+---
+
+## Features
+
+- **Syllabus PDF ingestion**: upload a syllabus and automatically extract subjects, topics and subtopics.
+- **AI question generation**: multiple-choice questions generated per topic, with carefully engineered distractors (plausible wrong options).
+- **Zero-leak delivery**: correct answers never leave the server until the quiz is submitted.
+- **Timed quiz player**: countdown timer, A/B/C/D options, one-question-at-a-time flow.
+- **Scorecard & review**: score ring, per-question breakdown, and explanations released after submission.
+- **"Explain My Mistake" AI tutor**: simplified explanation, a memory tip, and a real-world analogy for each wrong answer.
+- **Offline mock engine**: a built-in fallback so the app runs end-to-end without an LLM API key.
+
+## How It Works
+
 ```
-- Server running at: `http://localhost:8000`
-- Interactive Swagger UI: `http://localhost:8000/docs`
+Admin uploads PDF ─▶ Topics extracted ─▶ Student configures quiz
+        │                                         │
+        ▼                                         ▼
+   pypdf parsing                        LLM generates MCQs
+                                          (answers cached server-side)
+                                                  │
+                                                  ▼
+                              Student takes timed quiz (no answer keys in browser)
+                                                  │
+                                                  ▼
+                       Submit ─▶ Server grades ─▶ Results + explanations
+                                                  │
+                                                  ▼
+                                    "Explain My Mistake" AI tutor
+```
 
-### Step 2: Start the Frontend (Rahul)
-```powershell
-# In a second terminal inside project root
+## Tech Stack
+
+| Layer     | Technology                                              |
+|-----------|---------------------------------------------------------|
+| Frontend  | Next.js 15, React, TypeScript, Tailwind CSS             |
+| Backend   | Python, FastAPI, Pydantic                               |
+| AI / LLM  | Google Gemini 2.5 Flash (with offline mock fallback)    |
+| PDF       | pypdf                                                   |
+| API docs  | Swagger UI (auto-generated by FastAPI)                  |
+
+## Getting Started
+
+### Prerequisites
+
+- **Python** 3.10 or newer
+- **Node.js** 18.18 or newer (with npm)
+- *(Optional)* a **Gemini API key**. Without one, the app falls back to the offline mock engine.
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/saini0156/ai-assessment-engine.git
+cd ai-assessment-engine
+```
+
+### 2. Start the backend
+
+```bash
+cd backend
+
+# Create and activate a virtual environment
+python -m venv venv
+# Windows (PowerShell):
+.\venv\Scripts\Activate.ps1
+# macOS / Linux:
+source venv/bin/activate
+
+# Install dependencies and run
+pip install -r requirements.txt
+python run.py
+```
+
+- API server: <http://localhost:8000>
+- Interactive Swagger UI: <http://localhost:8000/docs>
+
+### 3. Start the frontend
+
+In a second terminal:
+
+```bash
 cd frontend
 npm install
 npm run dev
 ```
-- Frontend running at: `http://localhost:3000`
 
----
+- Web app: <http://localhost:3000>
 
-## 3. The 4 Core API Endpoints
+## Configuration
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/v1/syllabus/upload-pdf` | Uploads syllabus PDF and returns extracted topics/subtopics. |
-| `POST` | `/api/v1/quiz/generate` | Generates MCQs. Answer keys stay on the server (Zero-Leak). |
-| `POST` | `/api/v1/quiz/submit` | Grades student choices, releases explanations and AI feedback. |
-| `POST` | `/api/v1/tutor/explain` | Returns simplified explanation, memory tip, and real-world analogy. |
+The backend reads its settings from environment variables (see `backend/app/config.py`). Create a `.env` file in `backend/`:
+
+```env
+# Gemini API key. If omitted, the offline mock engine is used.
+GEMINI_API_KEY=your_api_key_here
+```
+
+> The exact variable names are defined in `config.py`, so adjust the above if they differ.
+
+If the frontend needs to reach a backend on a different host or port, point its API client (`frontend/src/lib/api.ts`) at the backend base URL (default `http://localhost:8000/api/v1`).
+
+## API Reference
+
+All endpoints are prefixed with `/api/v1`. Full, interactive documentation is available at `/docs` when the backend is running.
+
+| Method | Endpoint                | Description                                                          |
+|--------|-------------------------|----------------------------------------------------------------------|
+| `POST` | `/syllabus/upload-pdf`  | Upload a syllabus PDF; returns extracted topics and subtopics.       |
+| `POST` | `/quiz/generate`        | Generate MCQs. Answer keys stay on the server (zero-leak).           |
+| `POST` | `/quiz/submit`          | Grade the student's choices; releases explanations and AI feedback.  |
+| `POST` | `/tutor/explain`        | Returns a simplified explanation, memory tip, and real-world analogy.|
+
+### Example: upload a syllabus
+
+```bash
+curl -X POST http://localhost:8000/api/v1/syllabus/upload-pdf \
+  -F "file=@syllabus.pdf"
+```
+
+## Zero-Leak Anti-Cheat Design
+
+A common weakness in quiz apps is sending the answer key to the browser, where anyone can read it from the network tab. This engine avoids that:
+
+1. When `/quiz/generate` runs, the full question set **including correct answers** is stored in a server-side session cache (`session_store.py`).
+2. The client receives only the questions and options, with **no answer keys or explanations**.
+3. On `/quiz/submit`, the server compares the student's selections against the cached answers, then returns the score, the correct answers, and the explanations.
+
+## Testing
+
+An automated end-to-end script exercises the full flow (upload, generate, submit, explain):
+
+```bash
+cd backend
+python test_flow.py
+```
+
+Make sure the backend server is running first.
+
+## Team
+
+| Area      | Contributor |
+|-----------|-------------|
+| Backend   | Nitish      |
+| Frontend  | Rahul       |
+
+## Roadmap
+
+- [ ] User accounts and persistent quiz history
+- [ ] Persistent database in place of the in-memory session store
+- [ ] Difficulty levels and adaptive question selection
+- [ ] Support for additional question types (true/false, short answer)
+- [ ] Export results as PDF
+- [ ] Docker setup for one-command deployment
+
+## License
+
+No license has been specified yet. Add a `LICENSE` file (for example MIT) to define how others may use this project.

@@ -266,7 +266,7 @@ function QuizConfigForm() {
           <Link href="/" className="inline-flex items-center gap-2 self-start text-white">
             <GraduationCap className="h-7 w-7 sm:h-8 sm:w-8" />
             <span className="text-lg font-extrabold uppercase tracking-[0.2em] sm:text-2xl">
-              QuizPro
+              MindMark
             </span>
           </Link>
 
@@ -283,7 +283,7 @@ function QuizConfigForm() {
           </div>
 
           <p className="hidden text-sm text-white/80 lg:block">
-            &copy; {new Date().getFullYear()} QuizPro
+            &copy; {new Date().getFullYear()} MindMark
           </p>
         </div>
       </div>

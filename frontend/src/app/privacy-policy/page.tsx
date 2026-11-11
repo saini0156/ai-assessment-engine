@@ -6,14 +6,14 @@ const sections = [
     title: "1. Information We Collect",
     content: [
       "Account information: If you create an account, we may collect information such as your name, email address, and other details you provide.",
-      "Quiz information: We may collect quiz answers, scores, quiz history, uploaded study materials, and other content you submit while using QuizPro.",
+      "Quiz information: We may collect quiz answers, scores, quiz history, uploaded study materials, and other content you submit while using MindMark.",
       "Technical information: We may collect information such as browser type, device information, IP address, and basic usage data to help operate and improve the platform.",
     ],
   },
   {
     title: "2. How We Use Your Information",
     content: [
-      "To provide and maintain QuizPro services.",
+      "To provide and maintain MindMark services.",
       "To create quizzes, evaluate answers, and display results.",
       "To manage accounts and provide customer support.",
       "To improve platform performance, features, and user experience.",
@@ -32,7 +32,7 @@ const sections = [
     title: "4. Data Sharing",
     content: [
       "We do not sell your personal information.",
-      "We may share information with service providers that help us host, maintain, secure, or operate QuizPro. These providers should process information only for the services they provide to us.",
+      "We may share information with service providers that help us host, maintain, secure, or operate MindMark. These providers should process information only for the services they provide to us.",
       "We may disclose information where required by applicable law or where necessary to protect our rights, users, and platform.",
     ],
   },
@@ -55,14 +55,14 @@ const sections = [
   {
     title: "7. Third-Party Services",
     content: [
-      "QuizPro may rely on third-party services for hosting, analytics, authentication, email delivery, or other technical operations. Their handling of information is governed by their own privacy policies and applicable agreements.",
+      "MindMark may rely on third-party services for hosting, analytics, authentication, email delivery, or other technical operations. Their handling of information is governed by their own privacy policies and applicable agreements.",
       "We encourage you to review the privacy policies of third-party services you interact with.",
     ],
   },
   {
     title: "8. Children's Privacy",
     content: [
-      "QuizPro is not intended to knowingly collect personal information from children in violation of applicable law. Where required, parental or guardian consent must be obtained before processing a child's personal data.",
+      "MindMark is not intended to knowingly collect personal information from children in violation of applicable law. Where required, parental or guardian consent must be obtained before processing a child's personal data.",
     ],
   },
   {
@@ -92,7 +92,7 @@ export default function PrivacyPolicyPage() {
             Privacy Policy
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-stone-600">
-            This Privacy Policy explains how QuizPro collects, uses, stores,
+            This Privacy Policy explains how MindMark collects, uses, stores,
             and protects information when you use our platform.
           </p>
           <p className="mt-5 text-sm text-stone-500">
@@ -131,7 +131,7 @@ export default function PrivacyPolicyPage() {
               Email: [YOUR PRIVACY CONTACT EMAIL]
             </p>
             <p className="mt-2 text-sm text-stone-500">
-              Platform: QuizPro
+              Platform: MindMark
             </p>
           </section>
         </div>

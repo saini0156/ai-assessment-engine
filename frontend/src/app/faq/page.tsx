@@ -49,7 +49,7 @@ export default function FAQPage() {
           </h1>
 
           <p className="mt-5 max-w-2xl text-base leading-7 text-stone-600">
-            Find answers to common questions about QuizPro, quizzes,
+            Find answers to common questions about MindMark, quizzes,
             your account, and how to get started.
           </p>
 

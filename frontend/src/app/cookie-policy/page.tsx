@@ -10,9 +10,9 @@ const sections = [
     ],
   },
   {
-    title: "2. How QuizPro Uses Cookies",
+    title: "2. How MindMark Uses Cookies",
     content: [
-      "QuizPro may use cookies and similar technologies to keep the platform working, remember user preferences, support account sessions, and understand how users interact with the platform.",
+      "MindMark may use cookies and similar technologies to keep the platform working, remember user preferences, support account sessions, and understand how users interact with the platform.",
     ],
   },
   {
@@ -28,14 +28,14 @@ const sections = [
     title: "4. Managing Cookies",
     content: [
       "Most browsers allow you to view, block, or delete cookies through their settings.",
-      "Blocking certain cookies may affect the availability or functionality of some QuizPro features, including account-related features.",
+      "Blocking certain cookies may affect the availability or functionality of some MindMark features, including account-related features.",
       "Where required by applicable law, we will provide appropriate choices or consent mechanisms before using non-essential cookies.",
     ],
   },
   {
     title: "5. Third-Party Technologies",
     content: [
-      "If QuizPro uses third-party analytics, embedded content, or other integrations, those providers may use cookies or similar technologies under their own privacy policies.",
+      "If MindMark uses third-party analytics, embedded content, or other integrations, those providers may use cookies or similar technologies under their own privacy policies.",
       "You should review the relevant third-party policies to understand how those technologies operate.",
     ],
   },
@@ -66,7 +66,7 @@ export default function CookiePolicyPage() {
             Cookie Policy
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-stone-600">
-            This policy explains how QuizPro uses cookies and similar
+            This policy explains how MindMark uses cookies and similar
             technologies when you visit our platform.
           </p>
           <p className="mt-5 text-sm text-stone-500">
