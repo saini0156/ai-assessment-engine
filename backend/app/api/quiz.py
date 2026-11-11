@@ -1,5 +1,9 @@
-from fastapi import APIRouter, HTTPException
+import logging
 from typing import List
+from fastapi import APIRouter, HTTPException
+
+logger = logging.getLogger(__name__)
+
 from app.models.schemas import (
     QuizHistoryItem,
     QuizGenerateRequest,
@@ -18,6 +22,7 @@ except ImportError:
 
 router = APIRouter(prefix="/quiz", tags=["Quiz"])
 
+
 @router.post("/generate", response_model=QuizGenerateResponse)
 async def generate_quiz(request: QuizGenerateRequest):
     """
@@ -30,7 +35,8 @@ async def generate_quiz(request: QuizGenerateRequest):
         subject=request.subject,
         topic=request.topic,
         count=request.count,
-        difficulty=request.difficulty
+        difficulty=request.difficulty,
+        language=getattr(request, "language", "Auto")
     )
     
     # Store securely in server-side session store
@@ -38,8 +44,8 @@ async def generate_quiz(request: QuizGenerateRequest):
     if db_service:
         try:
             db_service.persist_quiz_session(internal_session, difficulty=request.difficulty)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception("Failed to persist quiz session snapshot: %s", e)
     
     # Create sanitized public questions (NO answers, NO explanations)
     public_questions = [
@@ -114,8 +120,8 @@ async def submit_quiz(request: QuizSubmitRequest):
                 reviews=reviews,
                 score_percentage=score_percentage
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception("Failed to record quiz submission to database: %s", e)
 
     return QuizSubmitResponse(
         quiz_session_id=session.quiz_session_id,
@@ -136,8 +142,8 @@ def get_quiz_history(limit: int = 50):
     if db_service:
         try:
             return db_service.get_quiz_history(limit=limit)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception("Failed to fetch quiz history from database: %s", e)
     return []
 
 
