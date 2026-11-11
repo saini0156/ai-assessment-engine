@@ -14,9 +14,8 @@ const footerLinks = [
 export function Footer() {
   const pathname = usePathname();
 
-  // The quiz builder is a full-screen page with no footer
-  if (pathname === "/quiz/new") return null;
-
+  // No footer on login, signup, the quiz builder and the test player
+  if (/^\/(login|signup)$|^\/quiz\/[^/]+$/.test(pathname)) return null;
   return (
     <footer className="border-t border-stone-200 bg-stone-50">
       <div className="mx-auto max-w-full px-6 py-12 sm:px-8 lg:px-12">
