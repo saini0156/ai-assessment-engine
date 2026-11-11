@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "@/components/layout/Navbar";
@@ -11,8 +11,14 @@ const serif = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "QuizPro | Syllabus to Practice Quizzes",
+  title: "MindMark | Syllabus to Practice Quizzes",
   description: "Turn a syllabus into practice quizzes with instant, plain-language explanations.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -24,7 +30,9 @@ export default function RootLayout({
     <html lang="en" className={serif.variable}>
       <body className="flex min-h-screen flex-col overflow-x-clip bg-[#fdfaf6] text-stone-900 antialiased">
         <Navbar />
-        <main className="mx-auto max-w-full px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main className="mx-auto max-w-full flex-1 px-4 py-6 pb-28 sm:px-6 sm:pb-6 lg:px-8">
+          {children}
+        </main>
         <Footer />
       </body>
     </html>

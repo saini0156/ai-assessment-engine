@@ -18,7 +18,7 @@ export function HeroSection() {
       />
 
       {/* Keeps the left text readable */}
-      <div className="absolute inset-0 bg-gradient-to-r from-black/55 via-black/10 to-transparent/10" />
+      <div className="absolute inset-0 bg-gradient-to-r from-black/55 via-black/10 to-transparent" />
 
       <div className="relative z-10 mx-auto grid min-h-screen w-full items-center gap-10 px-4 pb-16 pt-16 sm:px-8 lg:grid-cols-[1.3fr_1fr] lg:px-12">
         {/* Left: text */}

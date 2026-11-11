@@ -52,7 +52,7 @@ const steps = [
   },
 ];
 
-const STEP_DELAY = 300;
+const STEP_DELAY = 200;
 
 export function HowItWorksSection() {
   const ref = useRef<HTMLElement>(null);
@@ -67,6 +67,7 @@ export function HowItWorksSection() {
       return;
     }
 
+    // Lower threshold so the tall mobile layout still triggers reliably
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -74,7 +75,7 @@ export function HowItWorksSection() {
           observer.disconnect();
         }
       },
-      { threshold: 0.3 }
+      { threshold: 0.15 }
     );
 
     observer.observe(el);
@@ -83,7 +84,7 @@ export function HowItWorksSection() {
   }, []);
 
   return (
-    <section ref={ref} className="space-y-10">
+    <section ref={ref} className="space-y-8 sm:space-y-10">
       {/* Heading */}
       <div
         className={`text-center transition-all duration-700 motion-reduce:transition-none ${
@@ -100,14 +101,14 @@ export function HowItWorksSection() {
       </div>
 
       {/* Steps */}
-      <div className="grid gap-10 pl-10 sm:grid-cols-2 lg:grid-cols-5 lg:gap-6">
+      <div className="grid gap-10 px-2 sm:grid-cols-2 sm:gap-x-8 sm:pl-10 sm:pr-0 lg:grid-cols-5 lg:gap-6">
         {steps.map((s, i) => (
           <div
             key={s.title}
             style={{
               transitionDelay: visible ? `${i * STEP_DELAY}ms` : "0ms",
             }}
-            className={`relative flex gap-5 transition-all duration-700 motion-reduce:transition-none lg:block ${
+            className={`relative flex gap-4 transition-all duration-700 motion-reduce:transition-none sm:gap-5 lg:block ${
               visible
                 ? "translate-y-0 opacity-100"
                 : "translate-y-8 opacity-0"
@@ -117,18 +118,31 @@ export function HowItWorksSection() {
             <div
               className={`relative z-10 flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border transition-all duration-300 hover:-translate-y-1 hover:shadow-md ${s.iconBox}`}
             >
-              <s.icon
-                className="h-6 w-6"
-                strokeWidth={1.8}
-              />
+              <s.icon className="h-6 w-6" strokeWidth={1.8} />
             </div>
 
-            {/* Dashed Connector */}
+            {/* Mobile: vertical dashed connector (single column only) */}
             {i < steps.length - 1 && (
               <span
+                aria-hidden="true"
                 style={{
                   transitionDelay: visible
-                    ? `${i * STEP_DELAY + 400}ms`
+                    ? `${i * STEP_DELAY + 300}ms`
+                    : "0ms",
+                }}
+                className={`absolute -bottom-8 left-[calc(1.75rem-1px)] top-16 origin-top border-l-2 border-dashed transition-transform duration-700 motion-reduce:transition-none sm:hidden ${
+                  s.line
+                } ${visible ? "scale-y-100" : "scale-y-0"}`}
+              />
+            )}
+
+            {/* Desktop: horizontal dashed connector */}
+            {i < steps.length - 1 && (
+              <span
+                aria-hidden="true"
+                style={{
+                  transitionDelay: visible
+                    ? `${i * STEP_DELAY + 300}ms`
                     : "0ms",
                 }}
                 className={`absolute -right-6 left-[4.5rem] top-7 hidden origin-left border-t-2 border-dashed transition-transform duration-700 motion-reduce:transition-none lg:block ${
@@ -138,7 +152,7 @@ export function HowItWorksSection() {
             )}
 
             {/* Text */}
-            <div className="lg:mt-5">
+            <div className="min-w-0 pt-0.5 lg:mt-5 lg:pt-0">
               <p
                 className={`text-xs font-bold uppercase tracking-widest ${s.label}`}
               >

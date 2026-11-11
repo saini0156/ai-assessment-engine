@@ -37,7 +37,7 @@ const features = [
 
 export function HighlightsSection() {
   return (
-    <section className="space-y-8">
+    <section id="highlights" className="scroll-mt-4 space-y-8">
       {/* Section heading */}
       <Reveal direction="up">
         <h2 className="text-3xl font-extrabold tracking-tight text-stone-900 sm:text-4xl">

@@ -14,9 +14,8 @@ const footerLinks = [
 export function Footer() {
   const pathname = usePathname();
 
-  // The quiz builder is a full-screen page with no footer
-  if (pathname === "/quiz/new") return null;
-
+  // No footer on login, signup, the quiz builder and the test player
+  if (/^\/(login|signup)$|^\/quiz\/[^/]+$/.test(pathname)) return null;
   return (
     <footer className="border-t border-stone-200 bg-stone-50">
       <div className="mx-auto max-w-full px-6 py-12 sm:px-8 lg:px-12">
@@ -27,7 +26,7 @@ export function Footer() {
             <Link href="/" className="inline-flex items-center gap-2">
               <GraduationCap className="h-8 w-8 text-stone-900" />
               <span className="font-serif text-2xl font-bold text-stone-900">
-                Quiz<span className="text-stone-500">Pro</span>
+                Mind<span className="text-stone-500">Mark</span>
               </span>
             </Link>
 
@@ -81,7 +80,7 @@ export function Footer() {
         {/* Bottom Bar */}
         <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-stone-200 pt-6 sm:flex-row">
           <p className="text-xs text-stone-500">
-            © {new Date().getFullYear()} QuizPro. All rights reserved.
+            © {new Date().getFullYear()} MindMark. All rights reserved.
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-5">
