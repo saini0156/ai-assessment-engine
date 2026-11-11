@@ -32,18 +32,21 @@ const optionClass = (selected: boolean) =>
 type SubjectEntry = { name: string; topics: string[] };
 
 const toTopic = (t: any): string =>
-  typeof t === "string" ? t : t?.name ?? t?.title ?? t?.topic ?? "";
+  typeof t === "string" ? t : (t?.name ?? t?.title ?? t?.topic ?? "");
 
 // Accepts several likely response shapes from GET /syllabus/subjects:
 //   [{ subject, topics: [...] }]  |  { subjects: [...] }  |  { Physics: [...] }
 function normalizeSubjects(raw: any): SubjectEntry[] {
-  const list = Array.isArray(raw) ? raw : raw?.subjects ?? raw;
+  const list = Array.isArray(raw) ? raw : (raw?.subjects ?? raw);
 
   if (Array.isArray(list)) {
     return list
       .map((s: any) => ({
-        name: typeof s === "string" ? s : s?.subject ?? s?.name ?? s?.title ?? "",
-        topics: (Array.isArray(s?.topics) ? s.topics : []).map(toTopic).filter(Boolean),
+        name:
+          typeof s === "string" ? s : (s?.subject ?? s?.name ?? s?.title ?? ""),
+        topics: (Array.isArray(s?.topics) ? s.topics : [])
+          .map(toTopic)
+          .filter(Boolean),
       }))
       .filter((s) => s.name);
   }
@@ -51,7 +54,9 @@ function normalizeSubjects(raw: any): SubjectEntry[] {
   if (list && typeof list === "object") {
     return Object.entries(list).map(([name, topics]) => ({
       name,
-      topics: (Array.isArray(topics) ? topics : []).map(toTopic).filter(Boolean),
+      topics: (Array.isArray(topics) ? topics : [])
+        .map(toTopic)
+        .filter(Boolean),
     }));
   }
   return [];
@@ -67,7 +72,15 @@ type DropdownProps = {
   disabled?: boolean;
 };
 
-function Dropdown({ id, icon, value, options, onChange, placeholder, disabled }: DropdownProps) {
+function Dropdown({
+  id,
+  icon,
+  value,
+  options,
+  onChange,
+  placeholder,
+  disabled,
+}: DropdownProps) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -85,7 +98,8 @@ function Dropdown({ id, icon, value, options, onChange, placeholder, disabled }:
 
   // Keep the highlighted option visible while using the keyboard
   useEffect(() => {
-    if (open) listRef.current?.children[active]?.scrollIntoView({ block: "nearest" });
+    if (open)
+      listRef.current?.children[active]?.scrollIntoView({ block: "nearest" });
   }, [open, active]);
 
   const toggle = () => {
@@ -192,7 +206,7 @@ function QuizConfigForm() {
 
   const topics = useMemo(
     () => entries.find((e) => e.name === subject)?.topics ?? [],
-    [entries, subject]
+    [entries, subject],
   );
 
   useEffect(() => {
@@ -207,7 +221,7 @@ function QuizConfigForm() {
         const match = list.find((e) => e.name === s) ?? list[0];
         if (match) {
           setSubject(match.name);
-          setTopic(t && match.topics.includes(t) ? t : match.topics[0] ?? "");
+          setTopic(t && match.topics.includes(t) ? t : (match.topics[0] ?? ""));
         }
       } catch (err: any) {
         if (!cancelled) setError(err.message || "Failed to load subjects");
@@ -239,7 +253,10 @@ function QuizConfigForm() {
       });
 
       // Save quiz questions and metadata to sessionStorage for the player screen
-      sessionStorage.setItem(`quiz_${data.quiz_session_id}`, JSON.stringify(data));
+      sessionStorage.setItem(
+        `quiz_${data.quiz_session_id}`,
+        JSON.stringify(data),
+      );
       router.push(`/quiz/${data.quiz_session_id}`);
     } catch (err: any) {
       setError(err.message || "Failed to generate quiz");
@@ -252,7 +269,7 @@ function QuizConfigForm() {
       {/* ============ LEFT / TOP: image + content ============ */}
       <div className="relative min-h-[200px] shrink-0 bg-stone-300 sm:min-h-[260px] lg:h-full lg:w-[60%]">
         <Image
-          src="/images/quiz-bg.jpg"
+          src="/images/quiz-bg1.jpg"
           alt=""
           fill
           priority
@@ -263,11 +280,15 @@ function QuizConfigForm() {
         <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/70 lg:bg-gradient-to-r lg:from-black/65 lg:via-black/25 lg:to-black/10" />
 
         <div className="relative z-10 flex h-full flex-col justify-between gap-6 px-5 pb-10 pt-5 sm:p-10 lg:p-14">
-          <Link href="/" className="inline-flex items-center gap-2 self-start text-white">
-            <GraduationCap className="h-7 w-7 sm:h-8 sm:w-8" />
-            <span className="text-lg font-extrabold uppercase tracking-[0.2em] sm:text-2xl">
-              MindMark
-            </span>
+          <Link href="/" className="inline-flex items-center self-start">
+            <Image
+              src="/images/logowhite.png"
+              alt="MindMark"
+              width={200}
+              height={48}
+              className="h-8 w-auto sm:h-24"
+              priority
+            />
           </Link>
 
           <div className="max-w-2xl space-y-3 lg:space-y-4 lg:py-0">
@@ -276,9 +297,9 @@ function QuizConfigForm() {
             </h1>
             {/* Hidden on phones so the form is visible sooner */}
             <p className="hidden max-w-xl text-base leading-relaxed text-white/90 drop-shadow sm:block sm:text-lg">
-              Pick a subject and topic, choose how many questions you want, and get a timed
-              quiz in seconds. Every wrong answer comes with a simple explanation from the AI
-              tutor.
+              Pick a subject and topic, choose how many questions you want, and
+              get a timed quiz in seconds. Every wrong answer comes with a
+              simple explanation from the AI tutor.
             </p>
           </div>
 
@@ -290,17 +311,25 @@ function QuizConfigForm() {
 
       {/* ============ RIGHT / BOTTOM: form ============ */}
       <div className="relative z-10 -mt-6 flex flex-1 items-start justify-center rounded-t-3xl bg-white px-5 pb-[max(2rem,env(safe-area-inset-bottom))] pt-8 sm:px-12 sm:py-10 lg:mt-0 lg:h-full lg:w-[40%] lg:flex-none lg:items-center lg:overflow-y-auto lg:rounded-none lg:px-14">
-        <form onSubmit={handleStartQuiz} className="w-full max-w-md space-y-5 sm:space-y-6">
+        <form
+          onSubmit={handleStartQuiz}
+          className="w-full max-w-md space-y-5 sm:space-y-6"
+        >
           <div>
             <h2 className="text-3xl font-extrabold tracking-tight text-black sm:text-4xl">
               Set up your quiz
             </h2>
-            <p className="mt-1.5 text-stone-600 sm:mt-2">Choose your options to get started.</p>
+            <p className="mt-1.5 text-stone-600 sm:mt-2">
+              Choose your options to get started.
+            </p>
           </div>
 
           {/* Subject */}
           <div>
-            <label htmlFor="subject" className="block text-sm font-bold text-black">
+            <label
+              htmlFor="subject"
+              className="block text-sm font-bold text-black"
+            >
               Subject
             </label>
             <Dropdown
@@ -314,15 +343,18 @@ function QuizConfigForm() {
                 loadingSubjects
                   ? "Loading subjects..."
                   : entries.length === 0
-                  ? "No subjects found. Upload a syllabus PDF first"
-                  : "Select a subject"
+                    ? "No subjects found. Upload a syllabus PDF first"
+                    : "Select a subject"
               }
             />
           </div>
 
           {/* Topic */}
           <div>
-            <label htmlFor="topic" className="block text-sm font-bold text-black">
+            <label
+              htmlFor="topic"
+              className="block text-sm font-bold text-black"
+            >
               Topic
             </label>
             <Dropdown
@@ -332,13 +364,17 @@ function QuizConfigForm() {
               options={topics}
               onChange={setTopic}
               disabled={loadingSubjects || topics.length === 0}
-              placeholder={topics.length === 0 ? "No topics available" : "Select a topic"}
+              placeholder={
+                topics.length === 0 ? "No topics available" : "Select a topic"
+              }
             />
           </div>
 
           {/* Number of questions */}
           <div>
-            <span className="block text-sm font-bold text-black">Number of Questions</span>
+            <span className="block text-sm font-bold text-black">
+              Number of Questions
+            </span>
             <div className="mt-2 grid grid-cols-3 gap-2.5 sm:gap-3">
               {COUNTS.map((num) => (
                 <button
@@ -358,7 +394,9 @@ function QuizConfigForm() {
 
           {/* Difficulty */}
           <div>
-            <span className="block text-sm font-bold text-black">Difficulty Level</span>
+            <span className="block text-sm font-bold text-black">
+              Difficulty Level
+            </span>
             <div className="mt-2 grid grid-cols-3 gap-2.5 sm:gap-3">
               {LEVELS.map((lvl) => (
                 <button
@@ -419,7 +457,11 @@ function QuizConfigForm() {
 export default function QuizNewPage() {
   return (
     <Suspense
-      fallback={<div className="py-12 text-center text-stone-500">Loading quiz builder...</div>}
+      fallback={
+        <div className="py-12 text-center text-stone-500">
+          Loading quiz builder...
+        </div>
+      }
     >
       <QuizConfigForm />
     </Suspense>
