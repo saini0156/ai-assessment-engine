@@ -9,18 +9,25 @@ import {
   LoginRequest,
   SignupRequest,
   AuthResponse,
+  AuthUser,
 } from "../types";
+import { getSession } from "./session";
 
-// Base API URL pointing to Nitish's FastAPI backend
+// Base API URL pointing to the FastAPI backend
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const HEALTH_URL = API_BASE.replace(/\/api\/v1\/?$/, "") + "/health";
 
 // ---------------------------------------------------------------
-// Auth: frontend-only for now.
-// When the backend /auth endpoints are ready, set this to false.
+// Auth config: CHECK http://localhost:8000/docs and adjust these
 // ---------------------------------------------------------------
-const USE_MOCK_AUTH = true;
-
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const AUTH = {
+  login: "/auth/login",
+  signup: "/auth/signup", // some backends use /auth/register
+  me: "/auth/me",
+  // Set to true if Swagger shows "username" + "password" form fields
+  // (FastAPI OAuth2PasswordRequestForm). Set to false for a JSON body.
+  loginAsForm: false,
+};
 
 // Turns FastAPI errors (string or validation array) into readable text
 async function parseError(res: Response, fallback: string): Promise<string> {
@@ -36,12 +43,51 @@ async function parseError(res: Response, fallback: string): Promise<string> {
   return fallback;
 }
 
+// Adds the Bearer token (if logged in) to a set of headers
+function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const token = getSession()?.access_token;
+  return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
+}
+
+// Backends often return only { access_token, token_type }.
+// This guarantees we always end up with { access_token, user }.
+async function normalizeAuth(
+  data: any,
+  fallbackUser: Partial<AuthUser>
+): Promise<AuthResponse> {
+  const token: string = data.access_token ?? data.token;
+  if (!token) throw new Error("Server did not return a token");
+
+  let user: AuthUser | undefined = data.user;
+
+  if (!user) {
+    // Try /auth/me; if it doesn't exist, fall back to what the user typed
+    const me = await fetch(`${API_BASE}${AUTH.me}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => null);
+    if (me?.ok) user = await me.json().catch(() => undefined);
+  }
+
+  return {
+    access_token: token,
+    user: {
+      id: String(user?.id ?? fallbackUser.id ?? ""),
+      name:
+        user?.name ??
+        fallbackUser.name ??
+        fallbackUser.email?.split("@")[0] ??
+        "",
+      email: user?.email ?? fallbackUser.email ?? "",
+    },
+  };
+}
+
 export const apiClient = {
   /**
    * Health Check
    */
   checkHealth: async () => {
-    const res = await fetch("http://localhost:8000/health");
+    const res = await fetch(HEALTH_URL);
     if (!res.ok) throw new Error("Backend server is unreachable");
     return res.json();
   },
@@ -56,13 +102,11 @@ export const apiClient = {
 
     const res = await fetch(`${API_BASE}/syllabus/upload-pdf`, {
       method: "POST",
+      headers: authHeaders(), // don't set Content-Type: browser sets it for FormData
       body: formData,
     });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || "Failed to upload syllabus PDF");
-    }
+    if (!res.ok) throw new Error(await parseError(res, "Failed to upload syllabus PDF"));
     return res.json();
   },
 
@@ -70,11 +114,10 @@ export const apiClient = {
    * Screen 2: Fetch all uploaded subjects & topics from database
    */
   getSubjects: async () => {
-    const res = await fetch(`${API_BASE}/syllabus/subjects`);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || "Failed to fetch subjects from database");
-    }
+    const res = await fetch(`${API_BASE}/syllabus/subjects`, {
+      headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error(await parseError(res, "Failed to fetch subjects from database"));
     return res.json();
   },
 
@@ -84,14 +127,11 @@ export const apiClient = {
   generateQuiz: async (params: QuizGenerateRequest): Promise<QuizGenerateResponse> => {
     const res = await fetch(`${API_BASE}/quiz/generate`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(params),
     });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || "Failed to generate quiz");
-    }
+    if (!res.ok) throw new Error(await parseError(res, "Failed to generate quiz"));
     return res.json();
   },
 
@@ -101,14 +141,11 @@ export const apiClient = {
   submitQuiz: async (payload: QuizSubmitRequest): Promise<QuizSubmitResponse> => {
     const res = await fetch(`${API_BASE}/quiz/submit`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload),
     });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || "Failed to submit quiz answers");
-    }
+    if (!res.ok) throw new Error(await parseError(res, "Failed to submit quiz answers"));
     return res.json();
   },
 
@@ -118,56 +155,54 @@ export const apiClient = {
   explainMistake: async (data: TutorExplainRequest): Promise<TutorExplainResponse> => {
     const res = await fetch(`${API_BASE}/tutor/explain`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(data),
     });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || "Failed to retrieve AI tutor explanation");
-    }
+    if (!res.ok) throw new Error(await parseError(res, "Failed to retrieve AI tutor explanation"));
     return res.json();
   },
 
   /**
-   * Auth: Log in (mock until the backend /auth/login exists)
+   * Auth: Log in
    */
   login: async (payload: LoginRequest): Promise<AuthResponse> => {
-    if (USE_MOCK_AUTH) {
-      await wait(800);
-      return {
-        access_token: "mock-token",
-        user: { id: "mock-1", name: payload.email.split("@")[0], email: payload.email },
-      };
-    }
+    const res = AUTH.loginAsForm
+      ? await fetch(`${API_BASE}${AUTH.login}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            username: payload.email,
+            password: payload.password,
+          }),
+        })
+      : await fetch(`${API_BASE}${AUTH.login}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
 
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
     if (!res.ok) throw new Error(await parseError(res, "Invalid email or password"));
-    return res.json();
+    return normalizeAuth(await res.json(), { email: payload.email });
   },
 
   /**
-   * Auth: Sign up (mock until the backend /auth/signup exists)
+   * Auth: Sign up
    */
   signup: async (payload: SignupRequest): Promise<AuthResponse> => {
-    if (USE_MOCK_AUTH) {
-      await wait(800);
-      return {
-        access_token: "mock-token",
-        user: { id: "mock-1", name: payload.name, email: payload.email },
-      };
-    }
-
-    const res = await fetch(`${API_BASE}/auth/signup`, {
+    const res = await fetch(`${API_BASE}${AUTH.signup}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+
     if (!res.ok) throw new Error(await parseError(res, "Could not create your account"));
-    return res.json();
+    const data = await res.json().catch(() => ({}));
+
+    // If signup doesn't return a token, log in right after
+    if (!data.access_token && !data.token) {
+      return apiClient.login({ email: payload.email, password: payload.password });
+    }
+    return normalizeAuth(data, { name: payload.name, email: payload.email });
   },
 };
