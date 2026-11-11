@@ -1,19 +1,28 @@
+import os
+import tempfile
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.config import settings
 
-
-# Check database URL
-if not settings.DATABASE_URL:
-    raise ValueError("DATABASE_URL is missing in .env")
-
+# If DATABASE_URL is set (e.g. Supabase Postgres), use it.
+# Otherwise, use local SQLite in Temp directory to prevent Windows OneDrive file-locking deadlocks.
+if settings.DATABASE_URL and settings.DATABASE_URL.strip():
+    db_url = settings.DATABASE_URL.strip()
+    is_sqlite = False
+    connect_args = {}
+else:
+    temp_db_path = os.path.join(tempfile.gettempdir(), "quiz_pro_engine.db").replace("\\", "/")
+    db_url = f"sqlite:///{temp_db_path}"
+    is_sqlite = True
+    connect_args = {"check_same_thread": False, "timeout": 20}
 
 # Create database engine
 engine = create_engine(
-    settings.DATABASE_URL,
+    db_url,
     echo=settings.DB_ECHO,
-    pool_pre_ping=True,
+    connect_args=connect_args,
+    pool_pre_ping=not is_sqlite,
 )
 
 
