@@ -224,6 +224,23 @@ async def get_current_user(
     return user
 
 
+async def get_optional_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """Dependency: Extract authenticated user if Bearer JWT token present, else return None."""
+    if not credentials or not credentials.credentials:
+        return None
+    token = credentials.credentials
+    payload = decode_access_token(token)
+    if not payload:
+        return None
+    user_id = payload.get("sub")
+    if not user_id:
+        return None
+    return get_user_by_id(db, user_id)
+
+
 async def get_current_admin(
     current_user: User = Depends(get_current_user)
 ) -> User:

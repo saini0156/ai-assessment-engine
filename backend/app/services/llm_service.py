@@ -126,6 +126,10 @@ class LLMService:
         self.groq_pool = GroqKeyPool(settings.GROQ_API_KEYS)
         self.gemini_keys = settings.GEMINI_API_KEYS
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
+        self._groq_client = httpx.Client(
+            timeout=25.0,
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=50)
+        )
         logger.info(
             "LLMService initialized with %d Groq keys and %d Gemini keys.",
             self.groq_pool.total_keys(),
@@ -155,13 +159,11 @@ class LLMService:
             user_prompt += "\nOutput strictly as a JSON object."
         messages.append({"role": "user", "content": user_prompt})
 
-        # Production Groq model candidate list (gpt-oss-20b active for this account, with Llama fallbacks)
+        # High-speed active Groq model list prioritized by response latency
         models_to_try = [
-            "openai/gpt-oss-20b",
-            "openai/gpt-oss-120b",
-            "llama-3.1-8b-instant",
-            "llama-3.3-70b-versatile",
-            "qwen/qwen3.8-27b",
+            "qwen/qwen3.8-27b",       # Ultra-fast (~0.9s response)
+            "openai/gpt-oss-20b",     # Fast (~1.8s response)
+            "openai/gpt-oss-120b",    # High capacity fallback
         ]
 
         last_error = None
@@ -178,22 +180,22 @@ class LLMService:
                         "messages": messages,
                         "response_format": {"type": "json_object"},
                         "temperature": 0.2,
+                        "max_tokens": 2048,
                     }
-                    with httpx.Client(timeout=30.0) as client:
-                        resp = client.post(url, json=payload, headers=headers)
-                        if resp.status_code == 429:
-                            logger.warning("Groq 429 Rate Limit hit on key %s. Rotating to next key...", masked)
-                            break  # Try next API key
-                        resp.raise_for_status()
-                        content = resp.json()["choices"][0]["message"]["content"]
-                        parsed = json.loads(content)
+                    resp = self._groq_client.post(url, json=payload, headers=headers)
+                    if resp.status_code == 429:
+                        logger.warning("Groq 429 Rate Limit hit on key %s. Rotating to next key...", masked)
+                        break  # Try next API key
+                    resp.raise_for_status()
+                    content = resp.json()["choices"][0]["message"]["content"]
+                    parsed = json.loads(content)
 
-                        # Unpack wrapped lists if nested under keys like {'questions': [...]} or {'topics': [...]}
-                        if isinstance(parsed, dict):
-                            for val in parsed.values():
-                                if isinstance(val, list):
-                                    return val
-                        return parsed
+                    # Unpack wrapped lists if nested under keys like {'questions': [...]} or {'topics': [...]}
+                    if isinstance(parsed, dict):
+                        for val in parsed.values():
+                            if isinstance(val, list):
+                                return val
+                    return parsed
                 except Exception as e:
                     last_error = e
                     logger.warning("Groq candidate %s with key %s failed: %s", model_candidate, masked, e)
@@ -414,50 +416,80 @@ class LLMService:
         count: int,
         difficulty: str,
         language: str = "Auto",
+        force_fresh: bool = False,
     ) -> InternalQuizSession:
         """
-        High-Performance Quiz Generator.
-        For count <= 10: Runs a single fast cascade call (~1.2s).
-        For count > 10 (e.g. 20-50): Splits into concurrent parallel chunks of 10.
-        All threads rotate API keys across the key pool to avoid rate limits.
+        High-Performance Hybrid Quiz Generator (Question Bank + Parallel AI Fallback).
+        1. Checks PostgreSQL Question Bank first for instant 0-cost retrieval (<50ms).
+        2. If deficit exists, generates remaining questions via parallel 5-question micro-chunks.
+        3. Supports 5, 10, 20 up to 100 questions cleanly and free of cost.
         """
-        if count <= 10:
-            all_questions = self._generate_chunk(subject, topic, count, difficulty, 1, 1, language=language)
-        else:
-            # Parallel Batching Architecture for 20 to 50 questions
-            chunk_size = 10
-            chunks = []
-            rem = count
-            while rem > 0:
-                c = min(chunk_size, rem)
-                chunks.append(c)
-                rem -= c
+        all_questions: List[InternalQuestion] = []
 
-            total_chunks = len(chunks)
-            logger.info("Splitting %d questions into %d parallel batches.", count, total_chunks)
-
-            all_questions: List[InternalQuestion] = []
-            futures = []
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, total_chunks)) as executor:
-                for idx, c_count in enumerate(chunks, start=1):
-                    f = executor.submit(
-                        self._generate_chunk,
-                        subject=subject,
-                        topic=topic,
-                        count=c_count,
+        # Tier 0: Check existing Question Bank in PostgreSQL ($0 cost, 0ms latency)
+        if not force_fresh:
+            try:
+                from app.services.db_service import db_service
+                if db_service:
+                    bank_qs = db_service.get_bank_questions(
+                        subject_name=subject,
+                        topic_name=topic,
                         difficulty=difficulty,
-                        chunk_index=idx,
-                        total_chunks=total_chunks,
-                        language=language,
+                        limit=count
                     )
-                    futures.append(f)
+                    if bank_qs:
+                        logger.info("Found %d pre-generated questions in PostgreSQL Question Bank.", len(bank_qs))
+                        all_questions.extend(bank_qs)
+            except Exception as e_bank:
+                logger.warning("Question Bank lookup error: %s", e_bank)
 
-                for f in futures:
-                    try:
-                        res = f.result(timeout=40.0)
-                        all_questions.extend(res)
-                    except Exception as e:
-                        logger.error("Parallel batch execution error: %s", e)
+        needed = count - len(all_questions)
+
+        # Tier 1: Generate remaining deficit in parallel batches of 5
+        if needed > 0:
+            if needed <= 5:
+                generated = self._generate_chunk(subject, topic, needed, difficulty, 1, 1, language=language)
+            else:
+                chunk_size = 5
+                chunks = []
+                rem = needed
+                while rem > 0:
+                    c = min(chunk_size, rem)
+                    chunks.append(c)
+                    rem -= c
+
+                total_chunks = len(chunks)
+                logger.info("Generating %d questions via %d parallel batches.", needed, total_chunks)
+
+                generated: List[InternalQuestion] = []
+                futures = []
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, total_chunks)) as executor:
+                    for idx, c_count in enumerate(chunks, start=1):
+                        f = executor.submit(
+                            self._generate_chunk,
+                            subject=subject,
+                            topic=topic,
+                            count=c_count,
+                            difficulty=difficulty,
+                            chunk_index=idx,
+                            total_chunks=total_chunks,
+                            language=language,
+                        )
+                        futures.append(f)
+
+                    for f in futures:
+                        try:
+                            res = f.result(timeout=40.0)
+                            generated.extend(res)
+                        except Exception as e:
+                            logger.error("Parallel batch execution error: %s", e)
+
+            # Deduplicate by question text against bank questions
+            seen_texts = {q.question.strip().lower() for q in all_questions}
+            for q in generated:
+                if q.question.strip().lower() not in seen_texts:
+                    all_questions.append(q)
+                    seen_texts.add(q.question.strip().lower())
 
         # Assemble and cleanly re-index all generated questions
         questions_dict: Dict[str, InternalQuestion] = {}

@@ -1,10 +1,11 @@
 import logging
-from typing import List
-from fastapi import APIRouter, HTTPException
+from typing import List, Optional, Any
+from fastapi import APIRouter, HTTPException, Depends
 
 logger = logging.getLogger(__name__)
 from app.models.schemas import (
     QuizHistoryItem,
+    AdminUserHistoryItem,
     QuizGenerateRequest,
     QuizGenerateResponse,
     PublicQuestion,
@@ -12,6 +13,8 @@ from app.models.schemas import (
     QuizSubmitResponse,
     QuestionReview
 )
+from app.models.user import User
+from app.services.auth_service import get_optional_current_user, get_current_user
 from app.services.llm_service import llm_service
 from app.services.session_store import session_store
 try:
@@ -22,7 +25,10 @@ except ImportError:
 router = APIRouter(prefix="/quiz", tags=["Quiz"])
 
 @router.post("/generate", response_model=QuizGenerateResponse)
-async def generate_quiz(request: QuizGenerateRequest):
+async def generate_quiz(
+    request: QuizGenerateRequest,
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
     """
     Generate multiple choice questions.
     ZERO-LEAK SECURITY: Correct answers and explanations are stored in backend memory
@@ -34,14 +40,19 @@ async def generate_quiz(request: QuizGenerateRequest):
         topic=request.topic,
         count=request.count,
         difficulty=request.difficulty,
-        language=getattr(request, "language", "Auto")
+        language=getattr(request, "language", "Auto"),
+        force_fresh=getattr(request, "fresh", False),
     )
     
     # Store securely in server-side session store
     session_store.save_session(internal_session)
     if db_service:
         try:
-            db_service.persist_quiz_session(internal_session, difficulty=request.difficulty)
+            db_service.persist_quiz_session(
+                internal_session,
+                difficulty=request.difficulty,
+                user_id=current_user.id if current_user else None
+            )
         except Exception as e:
             logger.exception("Failed to persist quiz session snapshot: %s", e)
     
@@ -65,9 +76,13 @@ async def generate_quiz(request: QuizGenerateRequest):
 
 
 @router.post("/submit", response_model=QuizSubmitResponse)
-async def submit_quiz(request: QuizSubmitRequest):
+async def submit_quiz(
+    request: QuizSubmitRequest,
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
     """
     Submit student answers, grade the test, and release answer keys and explanations.
+    Saves the attempt against the logged-in user's user_id when authenticated.
     """
     session = session_store.get_session(request.quiz_session_id)
     if not session:
@@ -116,7 +131,8 @@ async def submit_quiz(request: QuizSubmitRequest):
                 quiz_session_id=session.quiz_session_id,
                 answers=request.answers,
                 reviews=reviews,
-                score_percentage=score_percentage
+                score_percentage=score_percentage,
+                user_id=current_user.id if current_user else None
             )
         except Exception as e:
             logger.exception("Failed to record quiz submission to database: %s", e)
@@ -131,18 +147,35 @@ async def submit_quiz(request: QuizSubmitRequest):
     )
 
 
-@router.get("/history", response_model=List[QuizHistoryItem])
-def get_quiz_history(limit: int = 50):
+@router.get("/history", response_model=List[Any])
+def get_quiz_history(
+    limit: int = 50,
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
     """
-    Fetch persistent quiz history and past scores from Supabase PostgreSQL.
-    No login required: lists recent student attempts and assessments.
+    Fetch quiz history from Supabase PostgreSQL.
+    - If user is logged in: returns their own attempts with correct_count and scores (newest first).
+    - If unauthenticated guest: returns recent public session history.
     """
-    if db_service:
-        try:
-            return db_service.get_quiz_history(limit=limit)
-        except Exception as e:
-            logger.exception("Failed to fetch quiz history from database: %s", e)
-    return []
+    if not db_service:
+        return []
+    try:
+        if current_user:
+            return db_service.get_user_quiz_history(user_id=current_user.id)
+        return db_service.get_quiz_history(limit=limit)
+    except Exception as e:
+        logger.exception("Failed to fetch quiz history from database: %s", e)
+        return []
+
+
+@router.get("/my-history", response_model=List[AdminUserHistoryItem])
+def get_my_quiz_history(
+    current_user: User = Depends(get_current_user)
+):
+    """Fetch the logged in user attempts and scores newest first."""
+    if not db_service:
+        return []
+    return db_service.get_user_quiz_history(user_id=current_user.id)
 
 
 @router.get("/{quiz_session_id}", response_model=QuizGenerateResponse)

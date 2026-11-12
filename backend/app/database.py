@@ -9,8 +9,8 @@ from app.config import settings
 # Otherwise, use local SQLite in Temp directory to prevent Windows OneDrive file-locking deadlocks.
 if settings.DATABASE_URL and settings.DATABASE_URL.strip():
     db_url = settings.DATABASE_URL.strip()
-    is_sqlite = False
-    connect_args = {}
+    is_sqlite = db_url.startswith("sqlite")
+    connect_args = {"check_same_thread": False, "timeout": 20} if is_sqlite else {}
 else:
     temp_db_path = os.path.join(tempfile.gettempdir(), "quiz_pro_engine.db").replace("\\", "/")
     db_url = f"sqlite:///{temp_db_path}"

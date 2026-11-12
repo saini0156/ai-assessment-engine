@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api.auth import router as auth_router
+from app.api.admin import router as admin_router
 from app.api.syllabus import router as syllabus_router
 from app.api.quiz import router as quiz_router
 from app.api.tutor import router as tutor_router
@@ -29,6 +30,7 @@ app.add_middleware(
 
 # Include all API routers under /api/v1
 app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
+app.include_router(admin_router, prefix=settings.API_V1_PREFIX)
 app.include_router(syllabus_router, prefix=settings.API_V1_PREFIX)
 app.include_router(quiz_router, prefix=settings.API_V1_PREFIX)
 app.include_router(tutor_router, prefix=settings.API_V1_PREFIX)
@@ -36,6 +38,9 @@ app.include_router(tutor_router, prefix=settings.API_V1_PREFIX)
 @app.on_event("startup")
 def on_startup():
     """Auto-seed default users for immediate local testing."""
+    import os
+    if os.getenv("TESTING", "").lower() in ["1", "true", "yes"]:
+        return
     from app.database import SessionLocal
     from app.services.auth_service import seed_default_users
     try:
