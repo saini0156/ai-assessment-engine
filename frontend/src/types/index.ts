@@ -83,11 +83,14 @@ export interface TutorExplainResponse {
   real_world_example: string;
 }
 
-// 5. Authentication (frontend-first: confirm these with the backend partner)
+// 5. Authentication
+// "name" is the app's field; api.ts converts the backend's "full_name" into it.
+// "role" is optional so older saved sessions (without a role) still work.
 export interface AuthUser {
   id: string;
   name: string;
   email: string;
+  role?: "admin" | "user" | "student";
 }
 
 export interface LoginRequest {
@@ -106,9 +109,29 @@ export interface AuthResponse {
   user: AuthUser;
 }
 
-export interface AuthUser {
+// 6. Admin: users and quiz history
+export interface AdminUserListItem {
   id: string;
   name: string;
   email: string;
-  role?: "admin" | "user";
+  role: "admin" | "user" | "student";
+  created_at: string;
+  quizzes_taken: number;
+  avg_score: number | null;
+  last_active: string | null;
+}
+
+export interface AdminUserHistoryItem {
+  quiz_session_id: string;
+  subject: string;
+  topic: string;
+  difficulty: string;
+  score_percentage: number;
+  correct_count: number;
+  total_questions: number;
+  submitted_at: string;
+}
+
+export interface UserRoleUpdateRequest {
+  role: "admin" | "user";
 }

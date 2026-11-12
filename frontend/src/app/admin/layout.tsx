@@ -11,7 +11,8 @@ import {
   Library,
   Loader2,
 } from "lucide-react";
-import { getSession } from "@/lib/session";
+import { getSession, saveSession } from "@/lib/session";
+import { apiClient } from "@/lib/api";
 
 const links = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
@@ -37,12 +38,33 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const [allowed, setAllowed] = useState(false);
 
-  // Session lives in the browser, so check it after mount
+  // Session lives in the browser, so check it after mount.
+  // The real role comes from the backend, so an edited localStorage can't fake it.
   useEffect(() => {
     const session = getSession();
-    if (!session) router.replace("/login");
-    else if (session.user?.role !== "admin") router.replace("/");
-    else setAllowed(true);
+    if (!session) {
+      router.replace("/login");
+      return;
+    }
+
+    let cancelled = false;
+
+    apiClient
+      .getMe()
+      .then((me) => {
+        if (cancelled) return;
+        saveSession({ ...session, user: me }); // also refreshes a stale or missing role
+        if (me.role === "admin") setAllowed(true);
+        else router.replace("/");
+      })
+      .catch(() => {
+        // Expired token or backend offline: send them to log in again
+        if (!cancelled) router.replace("/login");
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   if (!allowed) {
