@@ -61,7 +61,6 @@ async function normalizeAuth(
   let user: AuthUser | undefined = data.user;
 
   if (!user) {
-    // Try /auth/me; if it doesn't exist, fall back to what the user typed
     const me = await fetch(`${API_BASE}${AUTH.me}`, {
       headers: { Authorization: `Bearer ${token}` },
     }).catch(() => null);
@@ -78,10 +77,10 @@ async function normalizeAuth(
         fallbackUser.email?.split("@")[0] ??
         "",
       email: user?.email ?? fallbackUser.email ?? "",
+      role: user?.role ?? data.role ?? "user",
     },
   };
 }
-
 export const apiClient = {
   /**
    * Health Check
