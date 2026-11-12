@@ -7,7 +7,8 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-# Enforce in-memory SQLite for test runs
+# Enforce in-memory SQLite and testing flag for test runs
+os.environ["TESTING"] = "1"
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 import pytest
@@ -20,7 +21,11 @@ from app.config import settings
 settings.DATABASE_URL = "sqlite:///:memory:"
 
 from app.database import Base, get_db
+import app.database as app_database
 from app.main import app
+
+# Clear startup events to avoid external db connections during test runs
+app.router.on_startup.clear()
 
 test_engine = create_engine(
     "sqlite:///:memory:",
@@ -28,6 +33,10 @@ test_engine = create_engine(
     poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+
+# Route all database calls in tests to the test engine
+app_database.engine = test_engine
+app_database.SessionLocal = TestingSessionLocal
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -39,15 +48,11 @@ def initialize_tables():
 
 @pytest.fixture
 def db():
-    connection = test_engine.connect()
-    transaction = connection.begin()
-    session = TestingSessionLocal(bind=connection)
+    session = TestingSessionLocal()
     try:
         yield session
     finally:
         session.close()
-        transaction.rollback()
-        connection.close()
 
 
 @pytest.fixture
@@ -62,3 +67,4 @@ def client(db):
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+

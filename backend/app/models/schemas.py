@@ -1,6 +1,6 @@
 import re
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Literal
 
 # =========================================================================
 # --- 1. Syllabus Models (Worst-Case Protected) ---
@@ -41,10 +41,11 @@ class SyllabusUploadResponse(BaseModel):
 class QuizGenerateRequest(BaseModel):
     subject: str = Field(..., min_length=1, max_length=100, example="Computer Science")
     topic: str = Field(..., min_length=1, max_length=150, example="Object-Oriented Programming")
-    # Worst-case: Protect against negative counts or massive counts
-    count: int = Field(5, ge=1, le=50, example=5)
+    # Supports up to 100 questions via hybrid question-bank + parallel batching
+    count: int = Field(5, ge=1, le=100, example=5)
     difficulty: str = Field("Medium", example="Medium")
     language: Optional[str] = Field("Auto", example="Auto")
+    fresh: Optional[bool] = Field(False, description="Set True to force fresh AI generation instead of using question bank")
 
     @field_validator("difficulty")
     @classmethod
@@ -214,9 +215,9 @@ class UserRegisterRequest(BaseModel):
     @classmethod
     def validate_role(cls, v: str) -> str:
         val = v.strip().lower()
-        if val not in ["admin", "student"]:
-            return "student"
-        return val
+        if val in ["admin", "student", "user"]:
+            return "user" if val == "student" else val
+        return "user"
 
 
 class UserLoginRequest(BaseModel):
@@ -260,3 +261,33 @@ class UserProfileResponse(BaseModel):
 class AuthLogoutResponse(BaseModel):
     status: str = "success"
     message: str = "Logged out successfully"
+
+
+# =========================================================================
+# --- 6. Admin User Management Models ---
+# =========================================================================
+
+class AdminUserListItem(BaseModel):
+    id: str
+    name: str
+    email: str
+    role: str
+    created_at: Optional[str] = None
+    quizzes_taken: int = 0
+    avg_score: Optional[float] = 0.0
+    last_active: Optional[str] = None
+
+
+class AdminUserHistoryItem(BaseModel):
+    quiz_session_id: str
+    subject: str
+    topic: str
+    difficulty: str
+    score_percentage: float
+    correct_count: int
+    total_questions: int
+    submitted_at: Optional[str] = None
+
+
+class UserRoleUpdateRequest(BaseModel):
+    role: Literal["admin", "user"]

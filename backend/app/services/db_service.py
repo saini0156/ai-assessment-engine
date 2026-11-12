@@ -2,7 +2,10 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from app.database import SessionLocal
+import app.database as database
+
+def SessionLocal():
+    return database.SessionLocal()
 from app.models.user import User
 from app.models.subject import Subject
 from app.models.topic import Topic
@@ -179,14 +182,23 @@ class DatabaseService:
         finally:
             db.close()
 
-    def persist_quiz_session(self, internal_session: InternalQuizSession, difficulty: str) -> Optional[str]:
+    def persist_quiz_session(
+        self,
+        internal_session: InternalQuizSession,
+        difficulty: str,
+        user_id: Optional[str] = None
+    ) -> Optional[str]:
         """
         Saves full quiz session and question snapshots to PostgreSQL.
         """
         db = SessionLocal()
         try:
             # 1. Ensure foreign-key dependencies exist
-            user = self.get_or_create_demo_user(db)
+            user = None
+            if user_id:
+                user = db.query(User).filter_by(id=user_id).first()
+            if not user:
+                user = self.get_or_create_demo_user(db)
             subject = self.get_or_create_subject(db, internal_session.subject, user.id)
             topic = self.get_or_create_topic(db, subject.id, internal_session.topic)
 
@@ -258,6 +270,7 @@ class DatabaseService:
         score_percentage: float,
         answers: Dict[str, Optional[str]],
         reviews: Optional[List[Any]] = None,
+        user_id: Optional[str] = None,
         **kwargs
     ) -> bool:
         """
@@ -269,6 +282,11 @@ class DatabaseService:
             if not session:
                 logger.warning(f"Session '{quiz_session_id}' not found in PostgreSQL during submission.")
                 return False
+
+            if user_id:
+                user_record = db.query(User).filter_by(id=user_id).first()
+                if user_record:
+                    session.user_id = user_record.id
 
             session.status = "submitted"
             session.score_percentage = score_percentage
@@ -355,6 +373,66 @@ class DatabaseService:
         finally:
             db.close()
 
+    def get_bank_questions(
+        self,
+        subject_name: str,
+        topic_name: str,
+        difficulty: str,
+        limit: int = 50,
+    ) -> List[InternalQuestion]:
+        """
+        Retrieves pre-generated, randomized questions from PostgreSQL for instant 0-cost quiz delivery.
+        """
+        db = SessionLocal()
+        try:
+            from sqlalchemy import func
+            diff = difficulty.strip().lower()
+            if diff not in ["easy", "medium", "hard"]:
+                diff = "medium"
+
+            subj = db.query(Subject).filter(func.lower(Subject.name) == subject_name.strip().lower()).first()
+            if not subj:
+                return []
+
+            topic = db.query(Topic).filter(
+                Topic.subject_id == subj.id,
+                func.lower(Topic.name) == topic_name.strip().lower()
+            ).first()
+            if not topic:
+                return []
+
+            questions = (
+                db.query(Question)
+                .filter(
+                    Question.subject_id == subj.id,
+                    Question.topic_id == topic.id,
+                    Question.difficulty == diff,
+                    Question.is_active == True,
+                )
+                .order_by(func.random())
+                .limit(limit)
+                .all()
+            )
+
+            result = []
+            for idx, q in enumerate(questions, start=1):
+                clean_opts = q.options if isinstance(q.options, dict) else {}
+                result.append(
+                    InternalQuestion(
+                        id=f"q_{idx}",
+                        question=q.question_text,
+                        options=clean_opts,
+                        correct_option=q.correct_option or "A",
+                        explanation=q.explanation or f"Option {q.correct_option} is the verified correct answer.",
+                    )
+                )
+            return result
+        except Exception as e:
+            logger.error(f"Failed to fetch bank questions from DB: {e}", exc_info=True)
+            return []
+        finally:
+            db.close()
+
     def get_quiz_history(self, limit: int = 50) -> List[Dict[str, Any]]:
         """
         Retrieves recent quiz sessions with their scores, subject, topic, and completion status.
@@ -386,6 +464,153 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Failed to fetch quiz history: {e}", exc_info=True)
             return []
+        finally:
+            db.close()
+
+    def get_admin_users(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves all users along with aggregated quiz performance statistics:
+        quizzes_taken, avg_score, and last_active.
+        """
+        db = SessionLocal()
+        try:
+            from sqlalchemy import func
+            users = db.query(User).order_by(User.created_at.desc()).all()
+
+            stats_rows = (
+                db.query(
+                    QuizSession.user_id,
+                    func.count(QuizSession.id).label("quizzes_taken"),
+                    func.avg(QuizSession.score_percentage).label("avg_score"),
+                    func.max(QuizSession.submitted_at).label("last_active"),
+                )
+                .filter(QuizSession.status == "submitted")
+                .group_by(QuizSession.user_id)
+                .all()
+            )
+
+            stats_map = {
+                row.user_id: {
+                    "quizzes_taken": int(row.quizzes_taken),
+                    "avg_score": round(float(row.avg_score or 0.0), 1),
+                    "last_active": row.last_active.isoformat() if row.last_active else None,
+                }
+                for row in stats_rows
+            }
+
+            result = []
+            for u in users:
+                user_stat = stats_map.get(
+                    u.id,
+                    {"quizzes_taken": 0, "avg_score": 0.0, "last_active": None}
+                )
+                role_display = "admin" if u.role == "admin" else "user"
+                result.append({
+                    "id": str(u.id),
+                    "name": u.full_name or "Anonymous",
+                    "email": u.email,
+                    "role": role_display,
+                    "created_at": u.created_at.isoformat() if u.created_at else None,
+                    "quizzes_taken": user_stat["quizzes_taken"],
+                    "avg_score": user_stat["avg_score"],
+                    "last_active": user_stat["last_active"],
+                })
+            return result
+        except Exception as e:
+            logger.error(f"Failed to fetch admin users list: {e}", exc_info=True)
+            return []
+        finally:
+            db.close()
+
+    def get_user_quiz_history(self, user_id: str) -> List[Dict[str, Any]]:
+        """
+        Retrieves one user's quiz attempt history (newest first).
+        """
+        db = SessionLocal()
+        try:
+            from sqlalchemy import func
+            sessions = (
+                db.query(QuizSession, Subject.name, Topic.name)
+                .outerjoin(Subject, QuizSession.subject_id == Subject.id)
+                .outerjoin(Topic, QuizSession.topic_id == Topic.id)
+                .filter(QuizSession.user_id == user_id, QuizSession.status == "submitted")
+                .order_by(QuizSession.submitted_at.desc(), QuizSession.started_at.desc())
+                .all()
+            )
+
+            history = []
+            for qs, subj_name, topic_name in sessions:
+                ans_count = (
+                    db.query(func.count(QuizAnswer.id))
+                    .join(QuizSessionQuestion, QuizAnswer.session_question_id == QuizSessionQuestion.id)
+                    .filter(QuizSessionQuestion.session_id == qs.id, QuizAnswer.is_correct == True)
+                    .scalar()
+                ) or 0
+
+                if ans_count == 0 and qs.total_questions > 0 and qs.score_percentage is not None:
+                    ans_count = round((qs.score_percentage / 100.0) * qs.total_questions)
+
+                history.append({
+                    "quiz_session_id": qs.id,
+                    "subject": subj_name or "General",
+                    "topic": topic_name or "General Assessment",
+                    "difficulty": (qs.difficulty or "Medium").capitalize(),
+                    "score_percentage": round(float(qs.score_percentage or 0.0), 1),
+                    "correct_count": int(ans_count),
+                    "total_questions": int(qs.total_questions),
+                    "submitted_at": qs.submitted_at.isoformat() if qs.submitted_at else (qs.started_at.isoformat() if qs.started_at else None),
+                })
+            return history
+        except Exception as e:
+            logger.error(f"Failed to fetch user quiz history: {e}", exc_info=True)
+            return []
+        finally:
+            db.close()
+
+    def update_user_role(self, target_user_id: str, new_role: str, current_admin_id: str) -> User:
+        """
+        Updates role with protection against self-demotion and last-admin demotion.
+        """
+        from fastapi import HTTPException, status
+        db = SessionLocal()
+        try:
+            target = db.query(User).filter_by(id=target_user_id).first()
+            if not target:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"User with ID '{target_user_id}' not found."
+                )
+
+            # Rule 1: An admin must not be able to remove their own admin role
+            if target.id == current_admin_id and new_role != "admin":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Admins cannot revoke their own admin privileges."
+                )
+
+            # Rule 2: The last remaining admin must never be demoted
+            if target.role == "admin" and new_role != "admin":
+                active_admins = db.query(User).filter(User.role == "admin", User.is_active == True).count()
+                if active_admins <= 1:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Cannot demote the last remaining admin. At least one active admin account is required."
+                    )
+
+            target.role = new_role
+            db.commit()
+            db.refresh(target)
+            return target
+        except HTTPException:
+            db.rollback()
+            raise
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to update user role: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database error while updating user role."
+            )
         finally:
             db.close()
 

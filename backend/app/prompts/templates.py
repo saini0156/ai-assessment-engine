@@ -66,7 +66,7 @@ DISTRACTOR ENGINEERING RULES:
 2. Exactly 1 option must be correct.
 3. The 3 wrong options (distractors) MUST reflect genuine student misconceptions and plausible errors tailored specifically to the {difficulty} tier.
 4. ABSOLUTELY FORBIDDEN: NEVER use 'All of the above', 'None of the above', or 'Both A and B'.
-5. Provide a clear, educational explanation for why the correct option is right and why the distractors are incorrect.
+5. Provide a clear, educational explanation for why the correct option is right. Keep each explanation concise (maximum 1-2 sentences).
 
 Return ONLY a valid JSON array of objects with keys:
 - id: "q_1", "q_2", etc.
