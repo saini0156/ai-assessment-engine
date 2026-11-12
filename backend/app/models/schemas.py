@@ -215,9 +215,9 @@ class UserRegisterRequest(BaseModel):
     @classmethod
     def validate_role(cls, v: str) -> str:
         val = v.strip().lower()
-        if val in ["admin", "student", "user"]:
-            return "user" if val == "student" else val
-        return "user"
+        if val in ["admin", "student"]:
+            return val
+        return "student"
 
 
 class UserLoginRequest(BaseModel):
@@ -239,6 +239,9 @@ class UserResponse(BaseModel):
     role: str
     is_active: bool = True
     created_at: Optional[Any] = None
+    quizzes_taken: Optional[int] = 0
+    avg_score: Optional[float] = None
+    last_active: Optional[str] = None
 
     @model_validator(mode="after")
     def populate_name(self) -> "UserResponse":
@@ -290,4 +293,4 @@ class AdminUserHistoryItem(BaseModel):
 
 
 class UserRoleUpdateRequest(BaseModel):
-    role: Literal["admin", "user"]
+    role: Literal["admin", "student"]
