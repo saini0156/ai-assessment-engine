@@ -10,6 +10,8 @@ import {
   SignupRequest,
   AuthResponse,
   AuthUser,
+  AdminUserListItem,
+  AdminUserHistoryItem,
 } from "../types";
 import { getSession } from "./session";
 
@@ -49,8 +51,8 @@ function authHeaders(extra: Record<string, string> = {}): Record<string, string>
   return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
 }
 
-// Backends often return only { access_token, token_type }.
-// This guarantees we always end up with { access_token, user }.
+// The backend returns { access_token, token_type, user: { full_name, role, ... } }.
+// This guarantees we always end up with { access_token, user: { id, name, email, role } }.
 async function normalizeAuth(
   data: any,
   fallbackUser: Partial<AuthUser>
@@ -58,29 +60,35 @@ async function normalizeAuth(
   const token: string = data.access_token ?? data.token;
   if (!token) throw new Error("Server did not return a token");
 
-  let user: AuthUser | undefined = data.user;
+  let user: any = data.user;
 
   if (!user) {
     const me = await fetch(`${API_BASE}${AUTH.me}`, {
       headers: { Authorization: `Bearer ${token}` },
     }).catch(() => null);
-    if (me?.ok) user = await me.json().catch(() => undefined);
+    if (me?.ok) {
+      const raw = await me.json().catch(() => undefined);
+      user = raw?.user ?? raw;
+    }
   }
 
   return {
     access_token: token,
     user: {
       id: String(user?.id ?? fallbackUser.id ?? ""),
+      // Backend sends "full_name"; the app uses "name"
       name:
+        user?.full_name ??
         user?.name ??
         fallbackUser.name ??
         fallbackUser.email?.split("@")[0] ??
         "",
       email: user?.email ?? fallbackUser.email ?? "",
-      role: user?.role ?? data.role ?? "user",
+      role: String(user?.role ?? data.role ?? "student").toLowerCase() as AuthUser["role"],
     },
   };
 }
+
 export const apiClient = {
   /**
    * Health Check
@@ -136,6 +144,7 @@ export const apiClient = {
 
   /**
    * Screen 4: Submit Student Answers & Receive Score
+   * (the token links this attempt to the logged-in user's history)
    */
   submitQuiz: async (payload: QuizSubmitRequest): Promise<QuizSubmitResponse> => {
     const res = await fetch(`${API_BASE}/quiz/submit`, {
@@ -192,7 +201,12 @@ export const apiClient = {
     const res = await fetch(`${API_BASE}${AUTH.signup}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      // The backend field is "full_name"; our form field is "name"
+      body: JSON.stringify({
+        full_name: payload.name,
+        email: payload.email,
+        password: payload.password,
+      }),
     });
 
     if (!res.ok) throw new Error(await parseError(res, "Could not create your account"));
@@ -203,5 +217,63 @@ export const apiClient = {
       return apiClient.login({ email: payload.email, password: payload.password });
     }
     return normalizeAuth(data, { name: payload.name, email: payload.email });
+  },
+
+  /**
+   * Auth: current user (use it to refresh the role after it changes)
+   */
+  getMe: async (): Promise<AuthUser> => {
+    const res = await fetch(`${API_BASE}${AUTH.me}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(await parseError(res, "Could not load your profile"));
+    const raw = await res.json();
+    const u = raw.user ?? raw; // /auth/me may wrap the user, like login does
+    return {
+      id: String(u.id),
+      name: u.full_name ?? u.name ?? "",
+      email: u.email,
+      role: String(u.role ?? "student").toLowerCase() as AuthUser["role"],
+    };
+  },
+
+  /**
+   * Student: my own quiz history
+   */
+  getMyQuizHistory: async (): Promise<AdminUserHistoryItem[]> => {
+    const res = await fetch(`${API_BASE}/quiz/my-history`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(await parseError(res, "Failed to load quiz history"));
+    return res.json();
+  },
+
+  /**
+   * Admin: list all users
+   */
+  getAdminUsers: async (): Promise<AdminUserListItem[]> => {
+    const res = await fetch(`${API_BASE}/admin/users`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(await parseError(res, "Failed to load users"));
+    return res.json();
+  },
+
+  /**
+   * Admin: quiz history for one user
+   */
+  getAdminUserHistory: async (userId: string): Promise<AdminUserHistoryItem[]> => {
+    const res = await fetch(`${API_BASE}/admin/users/${userId}/history`, {
+      headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error(await parseError(res, "Failed to load user history"));
+    return res.json();
+  },
+
+    /**
+   * Admin: change a user's role
+   */
+  updateUserRole: async (userId: string, role: "admin" | "student"): Promise<AdminUserListItem> => {
+    const res = await fetch(`${API_BASE}/admin/users/${userId}/role`, {
+      method: "PATCH",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ role }),
+    });
+    if (!res.ok) throw new Error(await parseError(res, "Failed to update role"));
+    return res.json();
   },
 };

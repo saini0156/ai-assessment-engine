@@ -64,6 +64,7 @@ function HealthRow({
 export default function AdminDashboard() {
   const [name, setName] = useState("Admin");
   const [subjects, setSubjects] = useState<SubjectEntry[]>([]);
+  const [userCount, setUserCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
 
@@ -76,6 +77,11 @@ export default function AdminDashboard() {
       .then((raw) => setSubjects(normalizeSubjects(raw)))
       .catch(() => {})
       .finally(() => setLoading(false));
+
+    apiClient
+      .getAdminUsers()
+      .then((users) => setUserCount(users.length))
+      .catch(() => {}); // stays "—" if it fails
 
     apiClient
       .checkHealth()
@@ -104,7 +110,7 @@ export default function AdminDashboard() {
         <StatCard icon={Library} value={show(subjects.length)} label="Total Subjects" tint="bg-indigo-50 text-indigo-600" />
         <StatCard icon={ListChecks} value={show(totalTopics)} label="Total Topics" tint="bg-emerald-50 text-emerald-600" />
         <StatCard icon={Layers} value={show(avg)} label="Avg Topics / Subject" tint="bg-amber-50 text-amber-600" />
-        <StatCard icon={Users} value="—" label="Total Users" tint="bg-sky-50 text-sky-600" />
+        <StatCard icon={Users} value={userCount ?? "—"} label="Total Users" tint="bg-sky-50 text-sky-600" />
       </div>
 
       {/* Two panels */}
