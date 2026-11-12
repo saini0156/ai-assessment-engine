@@ -29,7 +29,7 @@ def test_normal_user(db):
         full_name="Student Nitish",
         email=f"student_{uuid.uuid4().hex[:6]}@example.com",
         hashed_password=hash_password("studentpass123"),
-        role="user",
+        role="student",
         is_active=True,
     )
     db.add(student)
@@ -86,7 +86,7 @@ def test_user_history_forbidden_for_normal_user(client, test_normal_user):
 
 
 def test_change_role_invalid_value(client, test_admin_user, test_normal_user):
-    """PATCH /admin/users/{user_id}/role returns 422 for invalid roles."""
+    """PATCH /admin/users/{user_id}/role returns 422 for invalid roles (including 'user')."""
     headers = get_auth_header(test_admin_user)
     res = client.patch(
         f"/api/v1/admin/users/{test_normal_user.id}/role",
@@ -95,6 +95,14 @@ def test_change_role_invalid_value(client, test_admin_user, test_normal_user):
     )
     assert res.status_code == 422
 
+    # 'user' is no longer accepted: only 'admin' and 'student' are valid
+    res_user = client.patch(
+        f"/api/v1/admin/users/{test_normal_user.id}/role",
+        headers=headers,
+        json={"role": "user"},
+    )
+    assert res_user.status_code == 422
+
 
 def test_change_role_self_demotion_blocked(client, test_admin_user):
     """Admin cannot remove their own admin role (returns 400)."""
@@ -102,7 +110,7 @@ def test_change_role_self_demotion_blocked(client, test_admin_user):
     res = client.patch(
         f"/api/v1/admin/users/{test_admin_user.id}/role",
         headers=headers,
-        json={"role": "user"},
+        json={"role": "student"},
     )
     assert res.status_code == 400
     assert "cannot revoke" in res.json()["detail"].lower()
@@ -138,7 +146,7 @@ def test_change_role_last_admin_demotion_blocked(client, db):
     res1 = client.patch(
         f"/api/v1/admin/users/{sole_admin.id}/role",
         headers=headers,
-        json={"role": "user"},
+        json={"role": "student"},
     )
     assert res1.status_code == 200
 
@@ -149,7 +157,7 @@ def test_change_role_last_admin_demotion_blocked(client, db):
         full_name="Other Admin",
         email="other@example.com",
         hashed_password=hash_password("adminpass123"),
-        role="user",
+        role="student",
         is_active=True,
     )
     db.add(other_admin)
@@ -168,6 +176,15 @@ def test_change_role_success(client, test_admin_user, test_normal_user):
     data = res.json()
     assert data["role"] == "admin"
     assert data["id"] == test_normal_user.id
+
+    # Also test demoting back with "student" (Rahul's TypeScript function)
+    res_student = client.patch(
+        f"/api/v1/admin/users/{test_normal_user.id}/role",
+        headers=headers,
+        json={"role": "student"},
+    )
+    assert res_student.status_code == 200
+    assert res_student.json()["role"] == "student"
 
 
 def test_auth_responses_include_role(client):

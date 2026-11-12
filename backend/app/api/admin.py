@@ -78,9 +78,9 @@ def update_user_role(
     current_admin: User = Depends(get_current_admin),
 ):
     """
-    Changes a user's role to 'admin' or 'user'.
+    Changes a user's role to 'admin' or 'student'.
     Guards:
-    - Only 'admin' or 'user' allowed (422 Unprocessable Entity otherwise).
+    - Only 'admin' or 'student' allowed (422 Unprocessable Entity otherwise).
     - An admin cannot demote their own account (400 Bad Request).
     - The last remaining admin cannot be demoted (400 Bad Request).
     """
