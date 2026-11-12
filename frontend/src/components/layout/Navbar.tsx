@@ -8,7 +8,9 @@ import {
   ArrowRight,
   ArrowUp,
   Home,
+  LayoutDashboard,
   ListChecks,
+  LogIn,
   LogOut,
   ShieldCheck,
   Sparkles,
@@ -16,10 +18,10 @@ import {
 import { clearSession, getSession } from "@/lib/session";
 import { AuthResponse } from "@/types";
 
+// Admin link is no longer here: it only shows for admins (see isAdmin below)
 const links = [
   { href: "/", label: "Home" },
   { href: "/quiz/new", label: "Quiz" },
-  { href: "/admin", label: "Admin" },
 ];
 
 export function Navbar() {
@@ -93,6 +95,7 @@ export function Navbar() {
       : "bg-white text-black hover:bg-stone-100 sm:bg-black sm:text-white sm:hover:bg-stone-800";
 
   const initial = session?.user.name?.trim().charAt(0).toUpperCase() || "U";
+  const isAdmin = session?.user?.role === "admin";
 
   const handleLogout = () => {
     clearSession();
@@ -193,6 +196,19 @@ export function Navbar() {
                       </p>
                       <p className="truncate text-xs text-stone-500">{session.user.email}</p>
                     </div>
+
+                    {/* Admins only */}
+                    {isAdmin && (
+                      <Link
+                        href="/admin"
+                        onClick={() => setMenuOpen(false)}
+                        className="flex w-full items-center gap-2.5 px-4 py-3 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50"
+                      >
+                        <LayoutDashboard className="h-4 w-4" />
+                        Admin Dashboard
+                      </Link>
+                    )}
+
                     <button
                       onClick={handleLogout}
                       className="flex w-full items-center gap-2.5 px-4 py-3 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50"
@@ -253,12 +269,19 @@ export function Navbar() {
             </Link>
           </li>
 
-          <NavItem
-            href="/admin"
-            label="Upload"
-            icon={ShieldCheck}
-            active={isActive("/admin")}
-          />
+          {/* 4th slot: Admin for admins, Log out for users, Log in for guests */}
+          {isAdmin ? (
+            <NavItem
+              href="/admin"
+              label="Admin"
+              icon={ShieldCheck}
+              active={isActive("/admin")}
+            />
+          ) : session ? (
+            <NavButton label="Log out" icon={LogOut} onClick={handleLogout} />
+          ) : (
+            <NavItem href="/login" label="Log in" icon={LogIn} active={isActive("/login")} />
+          )}
 
           {/* Back to top */}
           <NavButton label="Top" icon={ArrowUp} onClick={scrollTop} />

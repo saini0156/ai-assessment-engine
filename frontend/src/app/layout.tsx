@@ -3,6 +3,7 @@ import { Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { HideOnAdmin, PageMain } from "@/components/admin/AdminAware";
 
 const serif = Playfair_Display({
   subsets: ["latin"],
@@ -29,11 +30,15 @@ export default function RootLayout({
   return (
     <html lang="en" className={serif.variable}>
       <body className="flex min-h-screen flex-col overflow-x-clip bg-[#fdfaf6] text-stone-900 antialiased">
-        <Navbar />
-        <main className="mx-auto max-w-full flex-1 px-4 py-6 pb-28 sm:px-6 sm:pb-6 lg:px-8">
-          {children}
-        </main>
-        <Footer />
+        <HideOnAdmin>
+          <Navbar />
+        </HideOnAdmin>
+
+        <PageMain>{children}</PageMain>
+
+        <HideOnAdmin>
+          <Footer />
+        </HideOnAdmin>
       </body>
     </html>
   );
