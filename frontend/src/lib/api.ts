@@ -25,6 +25,7 @@ const HEALTH_URL = API_BASE.replace(/\/api\/v1\/?$/, "") + "/health";
 const AUTH = {
   login: "/auth/login",
   signup: "/auth/signup", // some backends use /auth/register
+  google: "/auth/google",
   me: "/auth/me",
   // Set to true if Swagger shows "username" + "password" form fields
   // (FastAPI OAuth2PasswordRequestForm). Set to false for a JSON body.
@@ -220,6 +221,21 @@ export const apiClient = {
   },
 
   /**
+   * Auth: Sign in with Google (the credential is Google's ID token)
+   * Works for both login and signup: the backend creates the account if needed.
+   */
+  googleLogin: async (credential: string): Promise<AuthResponse> => {
+    const res = await fetch(`${API_BASE}${AUTH.google}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ credential }),
+    });
+
+    if (!res.ok) throw new Error(await parseError(res, "Google sign-in failed"));
+    return normalizeAuth(await res.json(), {});
+  },
+
+  /**
    * Auth: current user (use it to refresh the role after it changes)
    */
   getMe: async (): Promise<AuthUser> => {
@@ -264,10 +280,10 @@ export const apiClient = {
     return res.json();
   },
 
-    /**
-   * Admin: change a user's role
+  /**
+   * Admin: change a user's role (the backend accepts only "admin" or "user")
    */
-  updateUserRole: async (userId: string, role: "admin" | "student"): Promise<AdminUserListItem> => {
+  updateUserRole: async (userId: string, role: "admin" | "user"): Promise<AdminUserListItem> => {
     const res = await fetch(`${API_BASE}/admin/users/${userId}/role`, {
       method: "PATCH",
       headers: authHeaders({ "Content-Type": "application/json" }),
