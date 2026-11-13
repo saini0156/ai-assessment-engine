@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -17,7 +18,8 @@ import { AdminUserHistoryItem, AdminUserListItem } from "@/types";
 
 /* ----------------------------- helpers ----------------------------- */
 
-// The backend sends times like "2026-11-12T10:00:00" (no timezone). Treat them as UTC.
+// The backend sends times like "2026-11-12T10:00:00" (no timezone).
+// Treat them as UTC.
 function toDate(value: string): Date {
   const hasZone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(value);
   return new Date(hasZone ? value : `${value}Z`);
@@ -25,14 +27,23 @@ function toDate(value: string): Date {
 
 function formatDate(value: string | null): string {
   if (!value) return "—";
+
   const d = toDate(value);
+
   if (isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+
+  return d.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function formatDateTime(value: string): string {
   const d = toDate(value);
+
   if (isNaN(d.getTime())) return "—";
+
   return d.toLocaleString(undefined, {
     day: "numeric",
     month: "short",
@@ -71,6 +82,7 @@ function HistoryDrawer({
 
   useEffect(() => {
     let cancelled = false;
+
     setItems(null);
     setError(null);
 
@@ -80,7 +92,9 @@ function HistoryDrawer({
         if (!cancelled) setItems(res);
       })
       .catch((err: any) => {
-        if (!cancelled) setError(err?.message || "Failed to load quiz history");
+        if (!cancelled) {
+          setError(err?.message || "Failed to load quiz history");
+        }
       });
 
     return () => {
@@ -88,12 +102,17 @@ function HistoryDrawer({
     };
   }, [user.id]);
 
-  // Esc closes, and the page behind doesn't scroll
+  // Esc closes, and the page behind doesn't scroll.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+
     window.addEventListener("keydown", onKey);
+
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
@@ -102,7 +121,11 @@ function HistoryDrawer({
 
   const avg =
     items && items.length
-      ? Math.round((items.reduce((s, i) => s + i.score_percentage, 0) / items.length) * 10) / 10
+      ? Math.round(
+          (items.reduce((s, i) => s + i.score_percentage, 0) /
+            items.length) *
+            10
+        ) / 10
       : null;
 
   return (
@@ -120,11 +143,18 @@ function HistoryDrawer({
         {/* Header */}
         <div className="flex items-start justify-between gap-3 border-b border-neutral-200 px-5 py-4">
           <div className="min-w-0">
-            <h2 id="history-title" className="truncate text-lg font-extrabold text-neutral-900">
+            <h2
+              id="history-title"
+              className="truncate text-lg font-extrabold text-neutral-900"
+            >
               {user.name}
             </h2>
-            <p className="truncate text-sm text-neutral-500">{user.email}</p>
+
+            <p className="truncate text-sm text-neutral-500">
+              {user.email}
+            </p>
           </div>
+
           <button
             onClick={onClose}
             aria-label="Close"
@@ -139,12 +169,17 @@ function HistoryDrawer({
           {items === null && !error && (
             <div className="flex flex-col items-center py-16 text-neutral-500">
               <Loader2 className="h-6 w-6 animate-spin text-black" />
-              <p className="mt-3 text-sm">Loading quiz history...</p>
+              <p className="mt-3 text-sm">
+                Loading quiz history...
+              </p>
             </div>
           )}
 
           {error && (
-            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <div
+              role="alert"
+              className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+            >
               {error}
             </div>
           )}
@@ -153,14 +188,21 @@ function HistoryDrawer({
             <>
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl bg-neutral-100 px-4 py-3">
-                  <p className="text-2xl font-extrabold text-neutral-900">{items.length}</p>
-                  <p className="text-xs text-neutral-500">Attempts</p>
+                  <p className="text-2xl font-extrabold text-neutral-900">
+                    {items.length}
+                  </p>
+                  <p className="text-xs text-neutral-500">
+                    Attempts
+                  </p>
                 </div>
+
                 <div className="rounded-xl bg-neutral-100 px-4 py-3">
                   <p className="text-2xl font-extrabold text-neutral-900">
                     {avg === null ? "—" : `${avg}%`}
                   </p>
-                  <p className="text-xs text-neutral-500">Average score</p>
+                  <p className="text-xs text-neutral-500">
+                    Average score
+                  </p>
                 </div>
               </div>
 
@@ -180,8 +222,11 @@ function HistoryDrawer({
                           <p className="truncate text-[15px] font-bold text-neutral-900">
                             {h.subject}
                           </p>
-                          <p className="truncate text-sm text-neutral-500">{h.topic}</p>
+                          <p className="truncate text-sm text-neutral-500">
+                            {h.topic}
+                          </p>
                         </div>
+
                         <span
                           className={`shrink-0 rounded-full px-3 py-1 text-sm font-bold ${scoreTone(
                             h.score_percentage
@@ -190,19 +235,26 @@ function HistoryDrawer({
                           {Math.round(h.score_percentage)}%
                         </span>
                       </div>
+
                       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
                         <span
                           className={`rounded-full px-2.5 py-1 font-semibold ${
-                            LEVEL_TONE[h.difficulty] ?? "bg-neutral-100 text-neutral-600"
+                            LEVEL_TONE[h.difficulty] ??
+                            "bg-neutral-100 text-neutral-600"
                           }`}
                         >
                           {h.difficulty}
                         </span>
+
                         <span className="text-neutral-500">
                           {h.correct_count}/{h.total_questions} correct
                         </span>
+
                         <span className="text-neutral-300">•</span>
-                        <span className="text-neutral-500">{formatDateTime(h.submitted_at)}</span>
+
+                        <span className="text-neutral-500">
+                          {formatDateTime(h.submitted_at)}
+                        </span>
                       </div>
                     </li>
                   ))}
@@ -223,15 +275,21 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<AdminUserListItem | null>(null);
+  const [selected, setSelected] =
+    useState<AdminUserListItem | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [notice, setNotice] = useState<{ type: "ok" | "error"; text: string } | null>(null);
+
+  const [notice, setNotice] = useState<{
+    type: "ok" | "error";
+    text: string;
+  } | null>(null);
 
   const myId = getSession()?.user?.id;
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+
     try {
       setUsers(await apiClient.getAdminUsers());
     } catch (err: any) {
@@ -245,28 +303,48 @@ export default function UsersPage() {
     load();
   }, [load]);
 
-  // Messages fade away on their own
+  // Messages fade away on their own.
   useEffect(() => {
     if (!notice) return;
+
     const t = setTimeout(() => setNotice(null), 4000);
+
     return () => clearTimeout(t);
   }, [notice]);
 
-  const handleRoleChange = async (user: AdminUserListItem, role: "admin" | "student") => {
+  // FIX: Use "admin" | "user" to match apiClient.updateUserRole().
+  const handleRoleChange = async (
+    user: AdminUserListItem,
+    role: "admin" | "user"
+  ) => {
     setSavingId(user.id);
     setNotice(null);
+
     try {
-      const updated = await apiClient.updateUserRole(user.id, role);
-      setUsers((prev) =>
-        prev.map((u) => (u.id === user.id ? { ...u, role: updated.role ?? role } : u))
+      const updated = await apiClient.updateUserRole(
+        user.id,
+        role
       );
+
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === user.id
+            ? { ...u, role: updated.role ?? role }
+            : u
+        )
+      );
+
       setNotice({
         type: "ok",
-        text: `${user.name} is now ${role === "admin" ? "an admin" : "a student"}.`,
+        text: `${user.name} is now ${
+          role === "admin" ? "an admin" : "a student"
+        }.`,
       });
     } catch (err: any) {
-      // The list is unchanged, so the dropdown snaps back to the old role
-      setNotice({ type: "error", text: err?.message || "Could not update the role." });
+      setNotice({
+        type: "error",
+        text: err?.message || "Could not update the role.",
+      });
     } finally {
       setSavingId(null);
     }
@@ -274,20 +352,39 @@ export default function UsersPage() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+
     if (!q) return users;
+
     return users.filter(
-      (u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
+      (u) =>
+        u.name.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q)
     );
   }, [users, query]);
 
-  const adminCount = users.filter((u) => u.role === "admin").length;
+  const adminCount = users.filter(
+    (u) => u.role === "admin"
+  ).length;
 
-  const RoleSelect = ({ user }: { user: AdminUserListItem }) => (
-    <div className="relative inline-flex items-center" onClick={(e) => e.stopPropagation()}>
+  // FIX: Map the UI's Student label to the API's "user" role.
+  const RoleSelect = ({
+    user,
+  }: {
+    user: AdminUserListItem;
+  }) => (
+    <div
+      className="relative inline-flex items-center"
+      onClick={(e) => e.stopPropagation()}
+    >
       <select
-        value={user.role === "admin" ? "admin" : "student"}
+        value={user.role === "admin" ? "admin" : "user"}
         disabled={savingId === user.id}
-        onChange={(e) => handleRoleChange(user, e.target.value as "admin" | "student")}
+        onChange={(e) =>
+          handleRoleChange(
+            user,
+            e.target.value as "admin" | "user"
+          )
+        }
         aria-label={`Role for ${user.name}`}
         className={`rounded-lg border py-1.5 pl-3 pr-8 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-black/20 disabled:cursor-wait disabled:opacity-60 ${
           user.role === "admin"
@@ -295,9 +392,10 @@ export default function UsersPage() {
             : "border-neutral-300 bg-white text-neutral-800"
         }`}
       >
-        <option value="student">Student</option>
+        <option value="user">Student</option>
         <option value="admin">Admin</option>
       </select>
+
       {savingId === user.id && (
         <Loader2 className="pointer-events-none absolute right-2 h-4 w-4 animate-spin text-neutral-400" />
       )}
@@ -309,11 +407,16 @@ export default function UsersPage() {
       {/* Title */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900">Users</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900">
+            Users
+          </h1>
+
           <p className="mt-1 text-neutral-500">
             {loading
               ? "Loading users..."
-              : `${users.length} ${users.length === 1 ? "user" : "users"} · ${adminCount} ${
+              : `${users.length} ${
+                  users.length === 1 ? "user" : "users"
+                } · ${adminCount} ${
                   adminCount === 1 ? "admin" : "admins"
                 }`}
           </p>
@@ -321,6 +424,7 @@ export default function UsersPage() {
 
         <div className="relative w-full sm:w-72">
           <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+
           <input
             type="search"
             value={query}
@@ -347,6 +451,7 @@ export default function UsersPage() {
           ) : (
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           )}
+
           {notice.text}
         </div>
       )}
@@ -355,7 +460,11 @@ export default function UsersPage() {
       {error && (
         <div className="mt-8 rounded-2xl border border-red-200 bg-red-50 p-6 text-center">
           <AlertCircle className="mx-auto h-8 w-8 text-red-500" />
-          <p className="mt-2 text-sm font-semibold text-red-800">{error}</p>
+
+          <p className="mt-2 text-sm font-semibold text-red-800">
+            {error}
+          </p>
+
           <button
             onClick={load}
             className="mt-4 inline-flex items-center gap-2 rounded-md bg-black px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-800"
@@ -370,7 +479,10 @@ export default function UsersPage() {
       {loading && !error && (
         <div className="mt-8 space-y-3" aria-busy="true">
           {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="h-16 animate-pulse rounded-2xl bg-neutral-200/70" />
+            <div
+              key={i}
+              className="h-16 animate-pulse rounded-2xl bg-neutral-200/70"
+            />
           ))}
         </div>
       )}
@@ -381,9 +493,13 @@ export default function UsersPage() {
           <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-100 text-neutral-600">
             <Users className="h-6 w-6" />
           </span>
+
           <p className="mt-4 text-base font-bold text-neutral-900">
-            {query ? "No users match your search" : "No users yet"}
+            {query
+              ? "No users match your search"
+              : "No users yet"}
           </p>
+
           <p className="mt-1 max-w-sm text-sm text-neutral-500">
             {query
               ? "Try a different name or email."
@@ -406,6 +522,7 @@ export default function UsersPage() {
                   <th className="px-5 py-3.5">Last active</th>
                 </tr>
               </thead>
+
               <tbody className="divide-y divide-neutral-100">
                 {filtered.map((u) => (
                   <tr
@@ -418,23 +535,33 @@ export default function UsersPage() {
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-sm font-bold text-white">
                           {u.name.trim().charAt(0).toUpperCase() || "U"}
                         </span>
+
                         <div className="min-w-0">
                           <p className="truncate font-semibold text-neutral-900">
                             {u.name}
+
                             {u.id === myId && (
                               <span className="ml-2 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-600">
                                 You
                               </span>
                             )}
                           </p>
-                          <p className="truncate text-neutral-500">{u.email}</p>
+
+                          <p className="truncate text-neutral-500">
+                            {u.email}
+                          </p>
                         </div>
                       </div>
                     </td>
+
                     <td className="px-5 py-4">
                       <RoleSelect user={u} />
                     </td>
-                    <td className="px-5 py-4 font-semibold text-neutral-900">{u.quizzes_taken}</td>
+
+                    <td className="px-5 py-4 font-semibold text-neutral-900">
+                      {u.quizzes_taken}
+                    </td>
+
                     <td className="px-5 py-4">
                       {u.avg_score === null ? (
                         <span className="text-neutral-400">—</span>
@@ -448,7 +575,10 @@ export default function UsersPage() {
                         </span>
                       )}
                     </td>
-                    <td className="px-5 py-4 text-neutral-500">{formatDate(u.last_active)}</td>
+
+                    <td className="px-5 py-4 text-neutral-500">
+                      {formatDate(u.last_active)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -463,7 +593,9 @@ export default function UsersPage() {
                   role="button"
                   tabIndex={0}
                   onClick={() => setSelected(u)}
-                  onKeyDown={(e) => e.key === "Enter" && setSelected(u)}
+                  onKeyDown={(e) =>
+                    e.key === "Enter" && setSelected(u)
+                  }
                   className="rounded-2xl border border-neutral-200 bg-white p-4 text-left transition active:bg-neutral-50"
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -471,37 +603,53 @@ export default function UsersPage() {
                       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-sm font-bold text-white">
                         {u.name.trim().charAt(0).toUpperCase() || "U"}
                       </span>
+
                       <div className="min-w-0">
                         <p className="truncate font-semibold text-neutral-900">
                           {u.name}
+
                           {u.id === myId && (
                             <span className="ml-2 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-600">
                               You
                             </span>
                           )}
                         </p>
-                        <p className="truncate text-sm text-neutral-500">{u.email}</p>
+
+                        <p className="truncate text-sm text-neutral-500">
+                          {u.email}
+                        </p>
                       </div>
                     </div>
+
                     <RoleSelect user={u} />
                   </div>
 
                   <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                     <div className="rounded-lg bg-neutral-100 py-2">
-                      <p className="text-base font-extrabold text-neutral-900">{u.quizzes_taken}</p>
-                      <p className="text-[11px] text-neutral-500">Quizzes</p>
+                      <p className="text-base font-extrabold text-neutral-900">
+                        {u.quizzes_taken}
+                      </p>
+                      <p className="text-[11px] text-neutral-500">
+                        Quizzes
+                      </p>
                     </div>
+
                     <div className="rounded-lg bg-neutral-100 py-2">
                       <p className="text-base font-extrabold text-neutral-900">
                         {formatAvg(u.avg_score)}
                       </p>
-                      <p className="text-[11px] text-neutral-500">Avg score</p>
+                      <p className="text-[11px] text-neutral-500">
+                        Avg score
+                      </p>
                     </div>
+
                     <div className="rounded-lg bg-neutral-100 py-2">
                       <p className="text-sm font-bold text-neutral-900">
                         {formatDate(u.last_active)}
                       </p>
-                      <p className="text-[11px] text-neutral-500">Last active</p>
+                      <p className="text-[11px] text-neutral-500">
+                        Last active
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -516,7 +664,12 @@ export default function UsersPage() {
         </>
       )}
 
-      {selected && <HistoryDrawer user={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <HistoryDrawer
+          user={selected}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   );
 }
