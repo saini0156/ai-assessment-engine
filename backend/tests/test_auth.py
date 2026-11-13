@@ -185,3 +185,68 @@ def test_logout(client):
     res = client.post("/api/v1/auth/logout")
     assert res.status_code == 200
     assert res.json()["status"] == "success"
+
+
+def test_google_login_new_user(client):
+    """Test new student signup via Google ID token."""
+    tag = uuid.uuid4().hex[:6]
+    res = client.post(
+        "/api/v1/auth/google",
+        json={"credential": f"mock_google_{tag}"}
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+    assert data["user"]["email"] == f"google_{tag}@gmail.com"
+    assert data["user"]["role"] == "student"
+    assert data["user"]["is_active"] is True
+
+
+def test_google_login_existing_user(client, db):
+    """Test existing user logging in via Google ID token preserves role."""
+    from app.models.user import User
+    tag = uuid.uuid4().hex[:6]
+    user_email = f"google_{tag}@gmail.com"
+
+    # Pre-create an admin with this email
+    existing_admin = User(
+        id=str(uuid.uuid4()),
+        full_name="Existing Google Admin",
+        email=user_email,
+        hashed_password=hash_password("adminpass123"),
+        role="admin",
+        is_active=True,
+    )
+    db.add(existing_admin)
+    db.commit()
+
+    # Sign in with Google using matching email
+    res = client.post(
+        "/api/v1/auth/google",
+        json={"credential": f"mock_google_{tag}"}
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["user"]["email"] == user_email
+    assert data["user"]["role"] == "admin"
+    assert data["user"]["id"] == existing_admin.id
+
+
+def test_google_login_invalid_token(client):
+    """Test that an invalid / garbage token returns 401 Unauthorized."""
+    res = client.post(
+        "/api/v1/auth/google",
+        json={"credential": "invalid_fake_token_1234567890"}
+    )
+    assert res.status_code == 401
+    assert "google authentication failed" in res.json()["detail"].lower() or "invalid" in res.json()["detail"].lower()
+
+
+def test_google_login_missing_credential(client):
+    """Test that missing credential returns 422 Unprocessable Entity."""
+    res = client.post(
+        "/api/v1/auth/google",
+        json={}
+    )
+    assert res.status_code == 422

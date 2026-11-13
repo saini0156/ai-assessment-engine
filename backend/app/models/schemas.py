@@ -230,6 +230,15 @@ class UserLoginRequest(BaseModel):
         return v.strip().lower()
 
 
+class GoogleLoginRequest(BaseModel):
+    credential: str = Field(
+        ...,
+        min_length=10,
+        description="Google ID Token (JWT) issued by Google Identity Services",
+        example="eyJhbGciOiJSUzI1NiIs..."
+    )
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str

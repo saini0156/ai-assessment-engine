@@ -5,6 +5,7 @@ from app.database import get_db
 from app.models.schemas import (
     UserRegisterRequest,
     UserLoginRequest,
+    GoogleLoginRequest,
     AuthTokenResponse,
     UserProfileResponse,
     UserResponse,
@@ -16,7 +17,9 @@ from app.services.auth_service import (
     create_user,
     authenticate_user,
     create_access_token,
-    get_current_user
+    get_current_user,
+    verify_google_id_token,
+    get_or_create_google_user
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -86,6 +89,46 @@ async def login(
             detail="Invalid email or password. Please check your credentials.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    token_data = {
+        "sub": user.id,
+        "email": user.email,
+        "role": user.role
+    }
+    access_token = create_access_token(token_data)
+
+    return AuthTokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user=UserResponse(
+            id=user.id,
+            full_name=user.full_name,
+            email=user.email,
+            role=user.role,
+            is_active=user.is_active,
+            created_at=str(user.created_at) if user.created_at else None
+        )
+    )
+
+
+@router.post(
+    "/google",
+    response_model=AuthTokenResponse,
+    summary="Sign in or sign up with Google Identity Services"
+)
+async def google_login(
+    payload: GoogleLoginRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Authenticate or register a user using Google Identity Services ID Token (credential).
+    - Cryptographically validates token signature with Google.
+    - If user exists by email, signs them in.
+    - If user does not exist, registers a new student account automatically.
+    - Returns standard JWT access_token and user profile with role.
+    """
+    google_info = verify_google_id_token(payload.credential)
+    user = get_or_create_google_user(db, google_info)
 
     token_data = {
         "sub": user.id,
