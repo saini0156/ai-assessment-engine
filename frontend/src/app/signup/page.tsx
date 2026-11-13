@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Loader2, Lock, Mail, User } from "lucide-react";
@@ -47,6 +47,22 @@ export default function SignupPage() {
     }
   };
 
+  const handleGoogle = useCallback(
+    async (credential: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await apiClient.googleLogin(credential);
+        saveSession(data);
+        router.push("/");
+      } catch (err: any) {
+        setError(err.message || "Google sign-in failed. Please try again.");
+        setLoading(false);
+      }
+    },
+    [router]
+  );
+
   return (
     <AuthShell
       image="/images/auth-bg2.jpg"
@@ -60,8 +76,10 @@ export default function SignupPage() {
         </div>
 
         <GoogleButton
-          label="Sign up with Google"
-          onClick={() => setError("Google sign-in isn't connected yet.")}
+          text="signup_with"
+          onCredential={handleGoogle}
+          onError={setError}
+          disabled={loading}
         />
 
         <div className="flex items-center gap-4 text-xs text-stone-500">
