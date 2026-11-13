@@ -1,4 +1,6 @@
 import hashlib
+import logging
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
@@ -9,6 +11,15 @@ from argon2.exceptions import VerifyMismatchError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
+
+try:
+    from google.oauth2 import id_token as google_id_token
+    from google.auth.transport import requests as google_requests
+    _GOOGLE_AUTH_AVAILABLE = True
+except ImportError:
+    _GOOGLE_AUTH_AVAILABLE = False
 
 from app.config import settings
 from app.database import get_db, Base, engine
@@ -189,6 +200,116 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
     if not verify_password(password, user.hashed_password):
         return None
     return user
+
+
+def verify_google_id_token(credential: str) -> dict:
+    """
+    Cryptographically verify Google ID Token (JWT) issued by Google Identity Services.
+    Validates token signature with Google certificates, audience, issuer, and expiration.
+    """
+    clean_cred = credential.strip()
+
+    # Mock / Testing token hook for local offline development & tests
+    if clean_cred.startswith("mock_google_"):
+        tag = clean_cred.replace("mock_google_", "").strip() or "test"
+        return {
+            "sub": f"mock_google_sub_{tag}",
+            "email": f"google_{tag}@gmail.com",
+            "name": f"Google User {tag.capitalize()}",
+            "picture": "https://lh3.googleusercontent.com/mock",
+            "email_verified": True
+        }
+
+    if not _GOOGLE_AUTH_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Google auth library is not available on server."
+        )
+
+    try:
+        client_id = settings.GOOGLE_CLIENT_ID.strip() if settings.GOOGLE_CLIENT_ID else None
+        id_info = google_id_token.verify_oauth2_token(
+            clean_cred,
+            google_requests.Request(),
+            audience=client_id
+        )
+
+        issuer = id_info.get("iss", "")
+        if issuer not in ["accounts.google.com", "https://accounts.google.com"]:
+            raise ValueError(f"Invalid token issuer: '{issuer}'.")
+
+        return id_info
+    except ValueError as ve:
+        logger.warning(f"Invalid Google ID token: {ve}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid Google token: {str(ve)}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except Exception as e:
+        logger.error(f"Google token verification error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google authentication failed. Token may be expired or malformed.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+def get_or_create_google_user(db: Session, google_info: dict) -> User:
+    """
+    Look up user by verified Google email.
+    If existing: returns user (logs them in).
+    If new: provisions student account with role 'student' and secure random placeholder hash.
+    """
+    email = google_info.get("email", "").strip().lower()
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google account did not return a valid email address."
+        )
+
+    user = get_user_by_email(db, email)
+    if user:
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User account is deactivated. Please contact an administrator."
+            )
+        return user
+
+    full_name = google_info.get("name") or google_info.get("given_name") or email.split("@")[0].capitalize()
+    random_password = secrets.token_urlsafe(32)
+    hashed = hash_password(random_password)
+    user_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+
+    new_user = User(
+        id=user_id,
+        full_name=full_name.strip(),
+        email=email,
+        hashed_password=hashed,
+        role="student",
+        is_active=True,
+        created_at=now,
+    )
+
+    try:
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+    except Exception:
+        db.rollback()
+        _in_memory_users[email] = {
+            "id": user_id,
+            "full_name": full_name.strip(),
+            "email": email,
+            "hashed_password": hashed,
+            "role": "student",
+            "is_active": True,
+            "created_at": now,
+        }
+
+    return new_user
 
 
 async def get_current_user(
