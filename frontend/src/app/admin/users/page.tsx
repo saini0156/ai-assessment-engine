@@ -12,14 +12,18 @@ import {
   Users,
   X,
 } from "lucide-react";
+
 import { apiClient } from "@/lib/api";
 import { getSession } from "@/lib/session";
-import { AdminUserHistoryItem, AdminUserListItem } from "@/types";
+
+import type {
+  AdminUserHistoryItem,
+  AdminUserListItem,
+  UserRole,
+} from "@/types";
 
 /* ----------------------------- helpers ----------------------------- */
 
-// The backend sends times like "2026-11-12T10:00:00" (no timezone).
-// Treat them as UTC.
 function toDate(value: string): Date {
   const hasZone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(value);
   return new Date(hasZone ? value : `${value}Z`);
@@ -29,7 +33,6 @@ function formatDate(value: string | null): string {
   if (!value) return "—";
 
   const d = toDate(value);
-
   if (isNaN(d.getTime())) return "—";
 
   return d.toLocaleDateString(undefined, {
@@ -41,7 +44,6 @@ function formatDate(value: string | null): string {
 
 function formatDateTime(value: string): string {
   const d = toDate(value);
-
   if (isNaN(d.getTime())) return "—";
 
   return d.toLocaleString(undefined, {
@@ -91,9 +93,13 @@ function HistoryDrawer({
       .then((res) => {
         if (!cancelled) setItems(res);
       })
-      .catch((err: any) => {
+      .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err?.message || "Failed to load quiz history");
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load quiz history"
+          );
         }
       });
 
@@ -102,7 +108,6 @@ function HistoryDrawer({
     };
   }, [user.id]);
 
-  // Esc closes, and the page behind doesn't scroll.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -110,19 +115,19 @@ function HistoryDrawer({
 
     window.addEventListener("keydown", onKey);
 
-    const prev = document.body.style.overflow;
+    const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
+      document.body.style.overflow = previousOverflow;
     };
   }, [onClose]);
 
   const avg =
     items && items.length
       ? Math.round(
-          (items.reduce((s, i) => s + i.score_percentage, 0) /
+          (items.reduce((sum, item) => sum + item.score_percentage, 0) /
             items.length) *
             10
         ) / 10
@@ -140,7 +145,6 @@ function HistoryDrawer({
         className="flex h-dvh w-full max-w-md flex-col bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-start justify-between gap-3 border-b border-neutral-200 px-5 py-4">
           <div className="min-w-0">
             <h2
@@ -149,7 +153,6 @@ function HistoryDrawer({
             >
               {user.name}
             </h2>
-
             <p className="truncate text-sm text-neutral-500">
               {user.email}
             </p>
@@ -164,14 +167,11 @@ function HistoryDrawer({
           </button>
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto overscroll-contain p-5">
           {items === null && !error && (
             <div className="flex flex-col items-center py-16 text-neutral-500">
               <Loader2 className="h-6 w-6 animate-spin text-black" />
-              <p className="mt-3 text-sm">
-                Loading quiz history...
-              </p>
+              <p className="mt-3 text-sm">Loading quiz history...</p>
             </div>
           )}
 
@@ -191,9 +191,7 @@ function HistoryDrawer({
                   <p className="text-2xl font-extrabold text-neutral-900">
                     {items.length}
                   </p>
-                  <p className="text-xs text-neutral-500">
-                    Attempts
-                  </p>
+                  <p className="text-xs text-neutral-500">Attempts</p>
                 </div>
 
                 <div className="rounded-xl bg-neutral-100 px-4 py-3">
@@ -275,8 +273,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [selected, setSelected] =
-    useState<AdminUserListItem | null>(null);
+  const [selected, setSelected] = useState<AdminUserListItem | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
 
   const [notice, setNotice] = useState<{
@@ -291,45 +288,44 @@ export default function UsersPage() {
     setError(null);
 
     try {
-      setUsers(await apiClient.getAdminUsers());
-    } catch (err: any) {
-      setError(err?.message || "Failed to load users");
+      const data = await apiClient.getAdminUsers();
+      setUsers(data);
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load users"
+      );
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
-  // Messages fade away on their own.
   useEffect(() => {
     if (!notice) return;
 
-    const t = setTimeout(() => setNotice(null), 4000);
-
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setNotice(null), 4000);
+    return () => clearTimeout(timer);
   }, [notice]);
 
-  // FIX: Use "admin" | "user" to match apiClient.updateUserRole().
   const handleRoleChange = async (
     user: AdminUserListItem,
-    role: "admin" | "user"
+    role: UserRole
   ) => {
+    if (savingId) return;
+
     setSavingId(user.id);
     setNotice(null);
 
     try {
-      const updated = await apiClient.updateUserRole(
-        user.id,
-        role
-      );
+      const updated = await apiClient.updateUserRole(user.id, role);
 
       setUsers((prev) =>
         prev.map((u) =>
           u.id === user.id
-            ? { ...u, role: updated.role ?? role }
+            ? { ...u, role: updated.role }
             : u
         )
       );
@@ -340,10 +336,13 @@ export default function UsersPage() {
           role === "admin" ? "an admin" : "a student"
         }.`,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setNotice({
         type: "error",
-        text: err?.message || "Could not update the role.",
+        text:
+          err instanceof Error
+            ? err.message
+            : "Could not update the role.",
       });
     } finally {
       setSavingId(null);
@@ -366,24 +365,16 @@ export default function UsersPage() {
     (u) => u.role === "admin"
   ).length;
 
-  // FIX: Map the UI's Student label to the API's "user" role.
-  const RoleSelect = ({
-    user,
-  }: {
-    user: AdminUserListItem;
-  }) => (
+  const RoleSelect = ({ user }: { user: AdminUserListItem }) => (
     <div
       className="relative inline-flex items-center"
       onClick={(e) => e.stopPropagation()}
     >
       <select
-        value={user.role === "admin" ? "admin" : "user"}
-        disabled={savingId === user.id}
+        value={user.role}
+        disabled={savingId === user.id || savingId !== null}
         onChange={(e) =>
-          handleRoleChange(
-            user,
-            e.target.value as "admin" | "user"
-          )
+          void handleRoleChange(user, e.target.value as UserRole)
         }
         aria-label={`Role for ${user.name}`}
         className={`rounded-lg border py-1.5 pl-3 pr-8 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-black/20 disabled:cursor-wait disabled:opacity-60 ${
@@ -404,7 +395,6 @@ export default function UsersPage() {
 
   return (
     <div className="mx-auto max-w-[1400px]">
-      {/* Title */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-neutral-900">
@@ -436,7 +426,6 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {/* Notice */}
       {notice && (
         <div
           role="status"
@@ -456,7 +445,6 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* Error */}
       {error && (
         <div className="mt-8 rounded-2xl border border-red-200 bg-red-50 p-6 text-center">
           <AlertCircle className="mx-auto h-8 w-8 text-red-500" />
@@ -466,7 +454,7 @@ export default function UsersPage() {
           </p>
 
           <button
-            onClick={load}
+            onClick={() => void load()}
             className="mt-4 inline-flex items-center gap-2 rounded-md bg-black px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-800"
           >
             <RefreshCw className="h-4 w-4" />
@@ -475,7 +463,6 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* Loading placeholders */}
       {loading && !error && (
         <div className="mt-8 space-y-3" aria-busy="true">
           {[0, 1, 2, 3].map((i) => (
@@ -487,7 +474,6 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* Empty */}
       {!loading && !error && filtered.length === 0 && (
         <div className="mt-8 flex flex-col items-center rounded-2xl border border-dashed border-neutral-300 bg-white px-6 py-14 text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-100 text-neutral-600">
@@ -495,9 +481,7 @@ export default function UsersPage() {
           </span>
 
           <p className="mt-4 text-base font-bold text-neutral-900">
-            {query
-              ? "No users match your search"
-              : "No users yet"}
+            {query ? "No users match your search" : "No users yet"}
           </p>
 
           <p className="mt-1 max-w-sm text-sm text-neutral-500">
@@ -510,7 +494,6 @@ export default function UsersPage() {
 
       {!loading && !error && filtered.length > 0 && (
         <>
-          {/* Desktop table */}
           <div className="mt-8 hidden overflow-hidden rounded-2xl border border-neutral-200 bg-white md:block">
             <table className="w-full text-left text-sm">
               <thead className="bg-neutral-50 text-xs font-bold uppercase tracking-wider text-neutral-500">
@@ -539,7 +522,6 @@ export default function UsersPage() {
                         <div className="min-w-0">
                           <p className="truncate font-semibold text-neutral-900">
                             {u.name}
-
                             {u.id === myId && (
                               <span className="ml-2 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-600">
                                 You
@@ -585,7 +567,6 @@ export default function UsersPage() {
             </table>
           </div>
 
-          {/* Mobile cards */}
           <ul className="mt-8 space-y-3 md:hidden">
             {filtered.map((u) => (
               <li key={u.id}>
@@ -593,9 +574,12 @@ export default function UsersPage() {
                   role="button"
                   tabIndex={0}
                   onClick={() => setSelected(u)}
-                  onKeyDown={(e) =>
-                    e.key === "Enter" && setSelected(u)
-                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelected(u);
+                    }
+                  }}
                   className="rounded-2xl border border-neutral-200 bg-white p-4 text-left transition active:bg-neutral-50"
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -607,7 +591,6 @@ export default function UsersPage() {
                       <div className="min-w-0">
                         <p className="truncate font-semibold text-neutral-900">
                           {u.name}
-
                           {u.id === myId && (
                             <span className="ml-2 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-600">
                               You
