@@ -13,6 +13,8 @@ class TopicItem(BaseModel):
     topic_id: str = Field(..., alias="topic_id")
     # Dual alias: Accepts both 'topic_name' (from frontend) and 'name' (from Database)
     topic_name: str = Field(..., alias="topic_name")
+    start_page: Optional[int] = Field(default=1, description="Starting page of topic in uploaded PDF")
+    end_page: Optional[int] = Field(default=1, description="Ending page of topic in uploaded PDF")
     subtopics: List[str] = Field(default_factory=list)
     summary: str = Field(default="No summary provided.")
 
@@ -46,6 +48,8 @@ class QuizGenerateRequest(BaseModel):
     difficulty: str = Field("Medium", example="Medium")
     language: Optional[str] = Field("Auto", example="Auto")
     fresh: Optional[bool] = Field(False, description="Set True to force fresh AI generation instead of using question bank")
+    context: Optional[str] = Field(None, description="Optional raw notes text to ground questions directly in document material")
+    is_full_syllabus: Optional[bool] = Field(False, description="Set True to distribute questions evenly across all syllabus topics")
 
     @field_validator("difficulty")
     @classmethod

@@ -79,10 +79,12 @@ class DatabaseService:
         file_bytes: bytes,
         text_content: str,
         topics: List[Any],
-        storage_path: Optional[str] = None
+        storage_path: Optional[str] = None,
+        pages_dict: Optional[Dict[int, str]] = None,
     ) -> Optional[str]:
         """
         Permanently persists uploaded syllabus PDF metadata, text chunks, and extracted topics to PostgreSQL.
+        Stores page-by-page chunks when pages_dict is provided for 100+ page indexing.
         """
         db = SessionLocal()
         try:
@@ -105,28 +107,52 @@ class DatabaseService:
             db.add(doc)
             db.flush()
 
-            # 2. Insert DocumentChunk if text available
-            clean_text = (text_content or "").strip()
-            if clean_text:
-                chunk = DocumentChunk(
-                    id=str(uuid.uuid4()),
-                    document_id=doc.id,
-                    chunk_index=0,
-                    page_number=1,
-                    character_count=len(clean_text),
-                    content=clean_text[:10000]
-                )
-                db.add(chunk)
+            # 2. Insert DocumentChunks (page by page for full 100+ page indexing)
+            if pages_dict and isinstance(pages_dict, dict):
+                chunk_idx = 0
+                for p_num, p_text in sorted(pages_dict.items(), key=lambda x: int(x[0])):
+                    p_clean = (p_text or "").strip()
+                    if p_clean:
+                        db.add(DocumentChunk(
+                            id=str(uuid.uuid4()),
+                            document_id=doc.id,
+                            chunk_index=chunk_idx,
+                            page_number=int(p_num),
+                            character_count=len(p_clean),
+                            content=p_clean
+                        ))
+                        chunk_idx += 1
                 db.flush()
+            else:
+                clean_text = (text_content or "").strip()
+                if clean_text:
+                    chunk = DocumentChunk(
+                        id=str(uuid.uuid4()),
+                        document_id=doc.id,
+                        chunk_index=0,
+                        page_number=1,
+                        character_count=len(clean_text),
+                        content=clean_text[:10000]
+                    )
+                    db.add(chunk)
+                    db.flush()
 
-            # 3. Insert each extracted topic
+            # 3. Insert each extracted topic with page range metadata
+            import re
             for t in topics:
                 t_name = getattr(t, "topic_name", "") or (t.get("topic_name") if isinstance(t, dict) else "")
                 t_subtopics = getattr(t, "subtopics", []) or (t.get("subtopics") if isinstance(t, dict) else [])
                 t_summary = getattr(t, "summary", "") or (t.get("summary") if isinstance(t, dict) else "")
+                start_p = getattr(t, "start_page", 1) or (t.get("start_page", 1) if isinstance(t, dict) else 1)
+                end_p = getattr(t, "end_page", 1) or (t.get("end_page", 1) if isinstance(t, dict) else 1)
 
                 if not t_name:
                     continue
+
+                if start_p and end_p and f"[Pages {start_p}-{end_p}]" not in t_summary:
+                    stored_summary = f"[Pages {start_p}-{end_p}] {t_summary}".strip()
+                else:
+                    stored_summary = t_summary or f"Topic for {t_name}"
 
                 existing_topic = db.query(Topic).filter_by(subject_id=subject.id, name=t_name).first()
                 if not existing_topic:
@@ -134,7 +160,7 @@ class DatabaseService:
                         id=str(uuid.uuid4()),
                         subject_id=subject.id,
                         name=t_name,
-                        summary=t_summary or f"Topic for {t_name}",
+                        summary=stored_summary,
                         subtopics=t_subtopics if isinstance(t_subtopics, list) else [],
                         source_type="syllabus",
                         is_approved=True
@@ -149,6 +175,89 @@ class DatabaseService:
             db.rollback()
             logger.error(f"Failed to persist syllabus to DB: {e}", exc_info=True)
             return None
+        finally:
+            db.close()
+
+    def get_notes_for_topic(self, subject_name: str, topic_name: str) -> str:
+        """
+        Retrieves note chunks grounded in the requested topic for that subject.
+        Uses topic start_page and end_page metadata for 100+ page documents.
+        """
+        db = SessionLocal()
+        try:
+            subject = db.query(Subject).filter_by(name=subject_name).first()
+            if not subject:
+                return ""
+
+            doc = (
+                db.query(Document)
+                .filter_by(subject_id=subject.id, is_active=True)
+                .order_by(Document.created_at.desc())
+                .first()
+            )
+            if not doc:
+                return ""
+
+            topic = db.query(Topic).filter_by(subject_id=subject.id, name=topic_name).first()
+
+            start_page, end_page = 1, 999
+            if topic and topic.summary:
+                import re
+                m = re.search(r'\[Pages\s+(\d+)\s*-\s*(\d+)\]', topic.summary)
+                if m:
+                    start_page, end_page = int(m.group(1)), int(m.group(2))
+
+            chunks = (
+                db.query(DocumentChunk)
+                .filter(
+                    DocumentChunk.document_id == doc.id,
+                    DocumentChunk.page_number >= start_page,
+                    DocumentChunk.page_number <= end_page,
+                )
+                .order_by(DocumentChunk.chunk_index)
+                .all()
+            )
+
+            if chunks:
+                merged = "\n\n".join([c.content for c in chunks])
+                return merged[:16000]
+
+            fallback_chunks = (
+                db.query(DocumentChunk)
+                .filter_by(document_id=doc.id)
+                .order_by(DocumentChunk.chunk_index)
+                .limit(5)
+                .all()
+            )
+            return "\n\n".join([c.content for c in fallback_chunks])[:16000]
+        except Exception as e:
+            logger.warning("Failed to fetch notes for topic '%s': %s", topic_name, e)
+            return ""
+        finally:
+            db.close()
+
+    def get_all_topics_for_subject(self, subject_name: str) -> List[Dict[str, Any]]:
+        """
+        Retrieves all topics for a given subject to support Full Syllabus sharding.
+        """
+        db = SessionLocal()
+        try:
+            subject = db.query(Subject).filter_by(name=subject_name).first()
+            if not subject:
+                return []
+            topics = db.query(Topic).filter_by(subject_id=subject.id, is_active=True).all()
+            return [
+                {
+                    "id": t.id,
+                    "name": t.name,
+                    "summary": t.summary or "",
+                    "subtopics": t.subtopics or [],
+                }
+                for t in topics
+            ]
+        except Exception as e:
+            logger.warning("Failed to fetch all topics for subject '%s': %s", subject_name, e)
+            return []
         finally:
             db.close()
 

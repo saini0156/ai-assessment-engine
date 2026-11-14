@@ -62,15 +62,24 @@ async def upload_syllabus_pdf(
                 detail="File too large. Maximum supported size is 10 MB.",
             )
 
+        pages_dict = {}
         if file.filename.lower().endswith(".pdf"):
-            cleaned_text, total_pages = pdf_service.extract_text(content_bytes)
+            try:
+                cleaned_text, total_pages, pages_dict = pdf_service.extract_text_and_pages(content_bytes)
+            except ValueError as ve:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(ve),
+                )
         else:
             cleaned_text = content_bytes.decode("utf-8", errors="ignore")
             total_pages = 1
+            pages_dict = {1: cleaned_text}
 
         if not cleaned_text.strip():
             # Fallback text if empty
             cleaned_text = f"Syllabus for {subject} covering foundational concepts."
+            pages_dict = {1: cleaned_text}
 
         topics = llm_service.extract_topics(subject=subject, text=cleaned_text)
 
@@ -83,6 +92,7 @@ async def upload_syllabus_pdf(
                     file_bytes=content_bytes,
                     text_content=cleaned_text,
                     topics=topics,
+                    pages_dict=pages_dict,
                 )
             except Exception as e:
                 logger.exception("Failed to persist syllabus to database: %s", e)

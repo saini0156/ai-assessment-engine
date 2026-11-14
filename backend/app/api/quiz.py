@@ -34,7 +34,7 @@ async def generate_quiz(
     ZERO-LEAK SECURITY: Correct answers and explanations are stored in backend memory
     and NEVER sent to the client browser until submission.
     """
-    # Generate full quiz session with internal answer keys
+    # Generate full quiz session with internal answer keys and notes grounding
     internal_session = llm_service.generate_quiz(
         subject=request.subject,
         topic=request.topic,
@@ -42,6 +42,8 @@ async def generate_quiz(
         difficulty=request.difficulty,
         language=getattr(request, "language", "Auto"),
         force_fresh=getattr(request, "fresh", False),
+        context=getattr(request, "context", None),
+        is_full_syllabus=getattr(request, "is_full_syllabus", False) or request.topic.strip().lower() in ["all topics", "full syllabus", "all", "entire syllabus"],
     )
     
     # Store securely in server-side session store
