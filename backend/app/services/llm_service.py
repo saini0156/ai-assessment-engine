@@ -299,7 +299,7 @@ class LLMService:
         return MockAIEngine.extract_topics(subject, text)
 
     # -------------------------------------------------------------
-    # Single Chunk Generator for Quiz Batching
+    # Single Chunk Generator for Quiz Batching (Notes Grounded & Math Protected)
     # -------------------------------------------------------------
     def _generate_chunk(
         self,
@@ -310,6 +310,7 @@ class LLMService:
         chunk_index: int = 1,
         total_chunks: int = 1,
         language: str = "Auto",
+        context: Optional[str] = None,
     ) -> List[InternalQuestion]:
         """Generates a slice of questions with context to avoid duplicate questions."""
         diff_key = difficulty.strip().capitalize() if difficulty else "Medium"
@@ -335,9 +336,24 @@ class LLMService:
         else:
             lang_directive = "LANGUAGE DIRECTIVE: Output all questions, options, and explanations in clear English."
 
+        if context and context.strip():
+            context_block = (
+                "===================================================================\n"
+                "REFERENCE STUDY MATERIAL / NOTES (GROUNDING SOURCE):\n"
+                '"""\n'
+                f"{context.strip()[:16000]}\n"
+                '"""\n'
+                "===================================================================\n"
+                "STRICT GROUNDING DIRECTIVE:\n"
+                f"- You must generate all {count} questions testing EXCLUSIVELY the facts, definitions, formulas, and concepts present in the REFERENCE STUDY MATERIAL above.\n"
+                "- Do NOT generate questions testing facts or concepts that are absent from these notes.\n"
+            )
+        else:
+            context_block = ""
+
         if total_chunks > 1:
             prompt = (
-                f"{QUIZ_GENERATION_PROMPT.format(count=count, subject=subject, topic=topic, difficulty=diff_key, difficulty_directive=diff_directive, language_directive=lang_directive)}\n"
+                f"{QUIZ_GENERATION_PROMPT.format(count=count, subject=subject, topic=topic, difficulty=diff_key, difficulty_directive=diff_directive, language_directive=lang_directive, context_block=context_block)}\n"
                 f"BATCH CONTEXT: This is Batch {chunk_index} of {total_chunks}. "
                 f"Generate unique, distinct questions covering different sub-concepts for {diff_key} difficulty. Avoid repeating standard intro questions."
             )
@@ -349,6 +365,7 @@ class LLMService:
                 difficulty=diff_key,
                 difficulty_directive=diff_directive,
                 language_directive=lang_directive,
+                context_block=context_block,
             )
 
         def _parse_generated(raw_data: Any) -> List[InternalQuestion]:
@@ -407,7 +424,7 @@ class LLMService:
         return chunk_questions
 
     # -------------------------------------------------------------
-    # Quiz Generation Cascade (Handles 5, 10, 20 to 50 Questions in Parallel)
+    # Quiz Generation Cascade (Handles 5, 10, 20 to 50 Questions in Parallel & Notes Grounding)
     # -------------------------------------------------------------
     def generate_quiz(
         self,
@@ -417,38 +434,119 @@ class LLMService:
         difficulty: str,
         language: str = "Auto",
         force_fresh: bool = False,
+        context: Optional[str] = None,
+        is_full_syllabus: bool = False,
     ) -> InternalQuizSession:
         """
-        High-Performance Hybrid Quiz Generator (Question Bank + Parallel AI Fallback).
-        1. Checks PostgreSQL Question Bank first for instant 0-cost retrieval (<50ms).
-        2. If deficit exists, generates remaining questions via parallel 5-question micro-chunks.
-        3. Supports 5, 10, 20 up to 100 questions cleanly and free of cost.
+        High-Performance Hybrid Quiz Generator (Question Bank + Parallel AI Fallback + Notes Grounding).
+        1. Supports Full Syllabus 50-Question Sharding across all course units.
+        2. Supports Notes Grounding: Questions strictly anchored to uploaded notes text.
+        3. Checks PostgreSQL Question Bank first for instant 0-cost retrieval (<50ms).
+        4. If deficit exists, generates remaining questions via parallel micro-chunks.
         """
+        try:
+            from app.services.db_service import db_service
+        except ImportError:
+            db_service = None
+
+        # ---------------------------------------------------------
+        # Case A: Full Syllabus Sharded Mode (e.g. 50-Question Exam)
+        # ---------------------------------------------------------
+        is_full = is_full_syllabus or (topic or "").strip().lower() in ["all topics", "full syllabus", "all", "entire syllabus"]
+        if is_full and db_service:
+            all_topics = db_service.get_all_topics_for_subject(subject)
+            if len(all_topics) >= 2:
+                logger.info("Generating Full Syllabus test across %d topics for '%s'.", len(all_topics), subject)
+                num_topics = len(all_topics)
+                base_per_topic = count // num_topics
+                extra = count % num_topics
+
+                topic_allocations = []
+                for idx, t_info in enumerate(all_topics):
+                    alloc = base_per_topic + (1 if idx < extra else 0)
+                    if alloc > 0:
+                        topic_allocations.append((t_info["name"], alloc))
+
+                all_generated_questions: List[InternalQuestion] = []
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, len(topic_allocations))) as executor:
+                    futures = []
+                    for t_name, t_count in topic_allocations:
+                        t_context = db_service.get_notes_for_topic(subject, t_name)
+                        f = executor.submit(
+                            self._generate_chunk,
+                            subject=subject,
+                            topic=t_name,
+                            count=t_count,
+                            difficulty=difficulty,
+                            chunk_index=1,
+                            total_chunks=1,
+                            language=language,
+                            context=t_context or context,
+                        )
+                        futures.append(f)
+
+                    for f in futures:
+                        try:
+                            res = f.result(timeout=45.0)
+                            all_generated_questions.extend(res)
+                        except Exception as e_sharded:
+                            logger.error("Full syllabus sharded worker error: %s", e_sharded)
+
+                questions_dict: Dict[str, InternalQuestion] = {}
+                for idx, q in enumerate(all_generated_questions[:count], start=1):
+                    qid = f"q_{idx}"
+                    questions_dict[qid] = InternalQuestion(
+                        id=qid,
+                        question=q.question.strip(),
+                        options=q.options,
+                        correct_option=q.correct_option,
+                        explanation=q.explanation.strip(),
+                    )
+
+                if len(questions_dict) >= count:
+                    return InternalQuizSession(
+                        quiz_session_id=f"quiz_{uuid.uuid4().hex[:10]}",
+                        subject=subject,
+                        topic="Full Syllabus",
+                        difficulty=difficulty,
+                        questions=questions_dict,
+                    )
+
+        # ---------------------------------------------------------
+        # Case B: Single Topic / Standard Quiz Mode with Notes Grounding
+        # ---------------------------------------------------------
+        notes_context = context
+        if not notes_context and db_service:
+            try:
+                notes_context = db_service.get_notes_for_topic(subject, topic)
+                if notes_context:
+                    logger.info("Retrieved %d characters of notes context for '%s' -> '%s'.", len(notes_context), subject, topic)
+            except Exception as e_notes:
+                logger.warning("Could not fetch notes from DB: %s", e_notes)
+
         all_questions: List[InternalQuestion] = []
 
         # Tier 0: Check existing Question Bank in PostgreSQL ($0 cost, 0ms latency)
-        if not force_fresh:
+        if not force_fresh and db_service:
             try:
-                from app.services.db_service import db_service
-                if db_service:
-                    bank_qs = db_service.get_bank_questions(
-                        subject_name=subject,
-                        topic_name=topic,
-                        difficulty=difficulty,
-                        limit=count
-                    )
-                    if bank_qs:
-                        logger.info("Found %d pre-generated questions in PostgreSQL Question Bank.", len(bank_qs))
-                        all_questions.extend(bank_qs)
+                bank_qs = db_service.get_bank_questions(
+                    subject_name=subject,
+                    topic_name=topic,
+                    difficulty=difficulty,
+                    limit=count
+                )
+                if bank_qs:
+                    logger.info("Found %d pre-generated questions in PostgreSQL Question Bank.", len(bank_qs))
+                    all_questions.extend(bank_qs)
             except Exception as e_bank:
                 logger.warning("Question Bank lookup error: %s", e_bank)
 
         needed = count - len(all_questions)
 
-        # Tier 1: Generate remaining deficit in parallel batches of 5
+        # Tier 1: Generate remaining deficit in parallel batches of 5 with notes grounding
         if needed > 0:
             if needed <= 5:
-                generated = self._generate_chunk(subject, topic, needed, difficulty, 1, 1, language=language)
+                generated = self._generate_chunk(subject, topic, needed, difficulty, 1, 1, language=language, context=notes_context)
             else:
                 chunk_size = 5
                 chunks = []
@@ -474,6 +572,7 @@ class LLMService:
                             chunk_index=idx,
                             total_chunks=total_chunks,
                             language=language,
+                            context=notes_context,
                         )
                         futures.append(f)
 

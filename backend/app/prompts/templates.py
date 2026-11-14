@@ -1,17 +1,20 @@
 """
 Prompt templates for AI Assessment Engine.
 Used for Topic Extraction, Tiered Distractor-Engineered Question Generation, and Pedagogical AI Tutoring.
+Includes Notes Grounding and LaTeX mathematical formatting guardrails.
 """
 
 TOPIC_EXTRACTION_PROMPT = """
 You are an expert curriculum analyzer.
-Analyze the following syllabus text for the subject: '{subject}'.
+Analyze the following syllabus / notes text for the subject: '{subject}'.
 
 {language_directive}
 
-Extract 3 to 6 major topics. For each topic, provide:
+Extract 3 to 6 major topics. For each topic, identify the page range where it is discussed:
 - topic_id (e.g. 'top_1', 'top_2')
 - topic_name (clear subject topic title)
+- start_page (integer: estimated start page number where topic begins, minimum 1)
+- end_page (integer: estimated end page number where topic ends, >= start_page)
 - subtopics (list of 2-5 subtopic strings)
 - summary (1 clear sentence summarizing the topic)
 
@@ -20,12 +23,14 @@ Return ONLY a valid JSON array matching this exact schema:
   {{
     "topic_id": "top_1",
     "topic_name": "...",
+    "start_page": 1,
+    "end_page": 15,
     "subtopics": ["...", "..."],
     "summary": "..."
   }}
 ]
 
-Syllabus Text:
+Syllabus / Notes Text:
 {text}
 """
 
@@ -59,14 +64,17 @@ Difficulty: {difficulty}
 
 {language_directive}
 
+{context_block}
+
 {difficulty_directive}
 
-DISTRACTOR ENGINEERING RULES:
+DISTRACTOR ENGINEERING & FORMATTING RULES:
 1. Every question must have exactly 4 options labeled 'A', 'B', 'C', 'D'.
 2. Exactly 1 option must be correct.
 3. The 3 wrong options (distractors) MUST reflect genuine student misconceptions and plausible errors tailored specifically to the {difficulty} tier.
 4. ABSOLUTELY FORBIDDEN: NEVER use 'All of the above', 'None of the above', or 'Both A and B'.
 5. Provide a clear, educational explanation for why the correct option is right. Keep each explanation concise (maximum 1-2 sentences).
+6. LATEX FORMATTING FOR FORMULAS: Format all mathematical formulas, scientific notations, and chemical equations using standard LaTeX enclosed in single dollar signs (e.g. $E = mc^2$ or $\\frac{{a}}{{b}}$). Do not use clumsy ASCII or broken unicode symbols.
 
 Return ONLY a valid JSON array of objects with keys:
 - id: "q_1", "q_2", etc.
