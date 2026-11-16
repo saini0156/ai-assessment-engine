@@ -55,6 +55,23 @@ COGNITIVE TIER: HARD (Critical Analysis, Synthesis & Edge-Case Traps)
 """,
 }
 
+MODE_DIRECTIVES = {
+    "notes": """
+GENERATION MODE: STRICT NOTES GROUNDING
+- 100% of questions must be directly based on the facts, definitions, formulas, and examples explicitly written in the REFERENCE STUDY MATERIAL.
+- DO NOT introduce outside concepts, hypothetical technologies, or scenarios absent from the notes.
+""",
+    "hybrid": """
+GENERATION MODE: HYBRID (NOTES + AI REAL-WORLD APPLICATION)
+- Core Theory (60%): Test foundational concepts, formulas, and definitions directly from the REFERENCE STUDY MATERIAL.
+- Applied Problem Solving (40%): Construct realistic, real-world applied scenarios that test whether the student can apply the notes' principles to novel situations.
+""",
+    "ai": """
+GENERATION MODE: AI EXPANDED KNOWLEDGE
+- Use the subject and topic as guidance, but draw upon your full, comprehensive curriculum knowledge base, competitive exam patterns, and cross-domain edge cases. Disregard any constraints of limited document notes.
+""",
+}
+
 QUIZ_GENERATION_PROMPT = """
 You are a master assessment creator and psychometrics expert.
 Generate {count} multiple choice questions (MCQs) for:
@@ -63,6 +80,8 @@ Topic: {topic}
 Difficulty: {difficulty}
 
 {language_directive}
+
+{mode_directive}
 
 {context_block}
 

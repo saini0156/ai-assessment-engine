@@ -21,6 +21,7 @@ from app.prompts.templates import (
     QUIZ_GENERATION_PROMPT,
     TUTOR_EXPLAIN_PROMPT,
     DIFFICULTY_DIRECTIVES,
+    MODE_DIRECTIVES,
 )
 
 logger = logging.getLogger(__name__)
@@ -161,9 +162,9 @@ class LLMService:
 
         # High-speed active Groq model list prioritized by response latency
         models_to_try = [
-            "qwen/qwen3.8-27b",       # Ultra-fast (~0.9s response)
-            "openai/gpt-oss-20b",     # Fast (~1.8s response)
-            "openai/gpt-oss-120b",    # High capacity fallback
+            "llama-3.3-70b-versatile",   # Flagship high-accuracy reasoning (~1.2s response)
+            "llama-3.1-8b-instant",      # Ultra-fast fallback (~0.8s response)
+            "mixtral-8x7b-32768",        # High capacity fallback
         ]
 
         last_error = None
@@ -311,12 +312,24 @@ class LLMService:
         total_chunks: int = 1,
         language: str = "Auto",
         context: Optional[str] = None,
+        mode: str = "hybrid",
     ) -> List[InternalQuestion]:
         """Generates a slice of questions with context to avoid duplicate questions."""
         diff_key = difficulty.strip().capitalize() if difficulty else "Medium"
         if diff_key not in ["Easy", "Medium", "Hard"]:
             diff_key = "Medium"
         diff_directive = DIFFICULTY_DIRECTIVES.get(diff_key, DIFFICULTY_DIRECTIVES["Medium"])
+
+        # Determine mode directive
+        mode_clean = (mode or "hybrid").strip().lower()
+        if mode_clean in ["notes", "strict_notes", "strict"]:
+            mode_key = "notes"
+        elif mode_clean in ["ai", "open_ai", "open", "llm"]:
+            mode_key = "ai"
+        else:
+            mode_key = "hybrid"
+
+        mode_directive = MODE_DIRECTIVES.get(mode_key, MODE_DIRECTIVES["hybrid"])
 
         clean_lang = (language or "Auto").strip().lower()
         if clean_lang == "hindi":
@@ -336,7 +349,8 @@ class LLMService:
         else:
             lang_directive = "LANGUAGE DIRECTIVE: Output all questions, options, and explanations in clear English."
 
-        if context and context.strip():
+        # In pure AI mode, bypass notes context entirely
+        if mode_key != "ai" and context and context.strip():
             context_block = (
                 "===================================================================\n"
                 "REFERENCE STUDY MATERIAL / NOTES (GROUNDING SOURCE):\n"
@@ -345,15 +359,14 @@ class LLMService:
                 '"""\n'
                 "===================================================================\n"
                 "STRICT GROUNDING DIRECTIVE:\n"
-                f"- You must generate all {count} questions testing EXCLUSIVELY the facts, definitions, formulas, and concepts present in the REFERENCE STUDY MATERIAL above.\n"
-                "- Do NOT generate questions testing facts or concepts that are absent from these notes.\n"
+                f"- You must generate all {count} questions aligned with the REFERENCE STUDY MATERIAL above.\n"
             )
         else:
             context_block = ""
 
         if total_chunks > 1:
             prompt = (
-                f"{QUIZ_GENERATION_PROMPT.format(count=count, subject=subject, topic=topic, difficulty=diff_key, difficulty_directive=diff_directive, language_directive=lang_directive, context_block=context_block)}\n"
+                f"{QUIZ_GENERATION_PROMPT.format(count=count, subject=subject, topic=topic, difficulty=diff_key, difficulty_directive=diff_directive, language_directive=lang_directive, mode_directive=mode_directive, context_block=context_block)}\n"
                 f"BATCH CONTEXT: This is Batch {chunk_index} of {total_chunks}. "
                 f"Generate unique, distinct questions covering different sub-concepts for {diff_key} difficulty. Avoid repeating standard intro questions."
             )
@@ -365,6 +378,7 @@ class LLMService:
                 difficulty=diff_key,
                 difficulty_directive=diff_directive,
                 language_directive=lang_directive,
+                mode_directive=mode_directive,
                 context_block=context_block,
             )
 
@@ -436,18 +450,22 @@ class LLMService:
         force_fresh: bool = False,
         context: Optional[str] = None,
         is_full_syllabus: bool = False,
+        mode: str = "hybrid",
     ) -> InternalQuizSession:
         """
         High-Performance Hybrid Quiz Generator (Question Bank + Parallel AI Fallback + Notes Grounding).
-        1. Supports Full Syllabus 50-Question Sharding across all course units.
-        2. Supports Notes Grounding: Questions strictly anchored to uploaded notes text.
-        3. Checks PostgreSQL Question Bank first for instant 0-cost retrieval (<50ms).
-        4. If deficit exists, generates remaining questions via parallel micro-chunks.
+        1. Supports 3 Generation Modes: 'notes' (strict notes), 'hybrid' (notes + AI), and 'ai' (pure AI).
+        2. Supports Full Syllabus 50-Question Sharding across all course units.
+        3. Supports Notes Grounding: Questions strictly anchored to uploaded notes text.
+        4. Checks PostgreSQL Question Bank first for instant 0-cost retrieval (<50ms).
+        5. If deficit exists, generates remaining questions via parallel micro-chunks.
         """
         try:
             from app.services.db_service import db_service
         except ImportError:
             db_service = None
+
+        mode_clean = (mode or "hybrid").strip().lower()
 
         # ---------------------------------------------------------
         # Case A: Full Syllabus Sharded Mode (e.g. 50-Question Exam)
@@ -456,7 +474,7 @@ class LLMService:
         if is_full and db_service:
             all_topics = db_service.get_all_topics_for_subject(subject)
             if len(all_topics) >= 2:
-                logger.info("Generating Full Syllabus test across %d topics for '%s'.", len(all_topics), subject)
+                logger.info("Generating Full Syllabus test across %d topics for '%s' (mode: %s).", len(all_topics), subject, mode_clean)
                 num_topics = len(all_topics)
                 base_per_topic = count // num_topics
                 extra = count % num_topics
@@ -471,7 +489,7 @@ class LLMService:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, len(topic_allocations))) as executor:
                     futures = []
                     for t_name, t_count in topic_allocations:
-                        t_context = db_service.get_notes_for_topic(subject, t_name)
+                        t_context = db_service.get_notes_for_topic(subject, t_name) if mode_clean != "ai" else None
                         f = executor.submit(
                             self._generate_chunk,
                             subject=subject,
@@ -481,7 +499,8 @@ class LLMService:
                             chunk_index=1,
                             total_chunks=1,
                             language=language,
-                            context=t_context or context,
+                            context=t_context or (context if mode_clean != "ai" else None),
+                            mode=mode_clean,
                         )
                         futures.append(f)
 
@@ -491,6 +510,9 @@ class LLMService:
                             all_generated_questions.extend(res)
                         except Exception as e_sharded:
                             logger.error("Full syllabus sharded worker error: %s", e_sharded)
+
+                import random
+                random.shuffle(all_generated_questions)
 
                 questions_dict: Dict[str, InternalQuestion] = {}
                 for idx, q in enumerate(all_generated_questions[:count], start=1):
@@ -513,10 +535,10 @@ class LLMService:
                     )
 
         # ---------------------------------------------------------
-        # Case B: Single Topic / Standard Quiz Mode with Notes Grounding
+        # Case B: Single Topic / Standard Quiz Mode
         # ---------------------------------------------------------
-        notes_context = context
-        if not notes_context and db_service:
+        notes_context = context if mode_clean != "ai" else None
+        if not notes_context and mode_clean != "ai" and db_service:
             try:
                 notes_context = db_service.get_notes_for_topic(subject, topic)
                 if notes_context:
@@ -546,7 +568,7 @@ class LLMService:
         # Tier 1: Generate remaining deficit in parallel batches of 5 with notes grounding
         if needed > 0:
             if needed <= 5:
-                generated = self._generate_chunk(subject, topic, needed, difficulty, 1, 1, language=language, context=notes_context)
+                generated = self._generate_chunk(subject, topic, needed, difficulty, 1, 1, language=language, context=notes_context, mode=mode_clean)
             else:
                 chunk_size = 5
                 chunks = []
@@ -557,7 +579,7 @@ class LLMService:
                     rem -= c
 
                 total_chunks = len(chunks)
-                logger.info("Generating %d questions via %d parallel batches.", needed, total_chunks)
+                logger.info("Generating %d questions via %d parallel batches (mode: %s).", needed, total_chunks, mode_clean)
 
                 generated: List[InternalQuestion] = []
                 futures = []
@@ -573,6 +595,7 @@ class LLMService:
                             total_chunks=total_chunks,
                             language=language,
                             context=notes_context,
+                            mode=mode_clean,
                         )
                         futures.append(f)
 
@@ -589,6 +612,10 @@ class LLMService:
                 if q.question.strip().lower() not in seen_texts:
                     all_questions.append(q)
                     seen_texts.add(q.question.strip().lower())
+
+        # Double-shuffle all questions so students never receive identical question sequences
+        import random
+        random.shuffle(all_questions)
 
         # Assemble and cleanly re-index all generated questions
         questions_dict: Dict[str, InternalQuestion] = {}
