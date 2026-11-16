@@ -333,6 +333,7 @@ class DatabaseService:
 
             # 3. Insert Questions and Session Question Snapshots
             for order, (q_id, internal_q) in enumerate(internal_session.questions.items(), start=1):
+                is_mock_q = bool(getattr(internal_q, "is_mock", False))
                 q_row = Question(
                     id=str(uuid.uuid4()),
                     subject_id=subject.id,
@@ -343,7 +344,9 @@ class DatabaseService:
                     explanation=internal_q.explanation,
                     difficulty=diff if diff in ["easy", "medium", "hard"] else "medium",
                     question_type="conceptual",
-                    source_type="ai_generated"
+                    source_type="ai_generated",
+                    status="draft" if is_mock_q else "approved",
+                    is_active=False if is_mock_q else True,
                 )
                 db.add(q_row)
                 db.flush()
@@ -517,6 +520,10 @@ class DatabaseService:
                     Question.topic_id == topic.id,
                     Question.difficulty == diff,
                     Question.is_active == True,
+                    Question.status == "approved",
+                    ~Question.question_text.ilike("%polymorphism%"),
+                    ~Question.question_text.ilike("%last-in, first-out%"),
+                    ~Question.question_text.ilike("%which oop principle%"),
                 )
                 .order_by(func.random())
                 .limit(limit)

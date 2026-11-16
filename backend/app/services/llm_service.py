@@ -435,6 +435,7 @@ class LLMService:
                     options=item["options"],
                     correct_option=item["correct_option"],
                     explanation=item["explanation"],
+                    is_mock=True,
                 )
             )
         return chunk_questions
@@ -633,19 +634,53 @@ class LLMService:
 
         # If pool had fewer questions than count, fill remainder safely
         if len(questions_dict) < count:
-            pool = MockAIEngine.get_pool(subject, topic, difficulty=difficulty)
-            curr = len(questions_dict) + 1
-            while curr <= count:
-                item = pool[curr % len(pool)]
-                qid = f"q_{curr}"
-                questions_dict[qid] = InternalQuestion(
-                    id=qid,
-                    question=item["question"],
-                    options=item["options"],
-                    correct_option=item["correct_option"],
-                    explanation=item["explanation"],
-                )
-                curr += 1
+            deficit = count - len(questions_dict)
+            if self.groq_pool.total_keys() > 0:
+                try:
+                    fill_prompt = QUIZ_GENERATION_PROMPT.format(
+                        count=deficit,
+                        subject=subject,
+                        topic=topic,
+                        difficulty=difficulty,
+                        difficulty_directive=DIFFICULTY_DIRECTIVES.get(difficulty, DIFFICULTY_DIRECTIVES["Medium"]),
+                        language_directive="LANGUAGE DIRECTIVE: Output all questions, options, and explanations in clear English.",
+                        mode_directive=MODE_DIRECTIVES.get(mode_clean, MODE_DIRECTIVES["hybrid"]),
+                        context_block=f"REFERENCE NOTES:\n{notes_context[:8000]}" if notes_context else "",
+                    )
+                    data = self._call_groq(fill_prompt)
+                    extra_qs = _parse_generated(data)
+                    for eq in extra_qs:
+                        if len(questions_dict) >= count:
+                            break
+                        if eq.question.strip().lower() not in {q.question.strip().lower() for q in questions_dict.values()}:
+                            qid = f"q_{len(questions_dict) + 1}"
+                            questions_dict[qid] = InternalQuestion(
+                                id=qid,
+                                question=eq.question.strip(),
+                                options=eq.options,
+                                correct_option=eq.correct_option,
+                                explanation=eq.explanation.strip(),
+                                is_mock=False,
+                            )
+                except Exception as e_fill:
+                    logger.warning("Failed to AI-fill question deficit: %s", e_fill)
+
+            # If still short, fallback safely with is_mock=True
+            if len(questions_dict) < count:
+                pool = MockAIEngine.get_pool(subject, topic, difficulty=difficulty)
+                curr = len(questions_dict) + 1
+                while curr <= count:
+                    item = pool[curr % len(pool)]
+                    qid = f"q_{curr}"
+                    questions_dict[qid] = InternalQuestion(
+                        id=qid,
+                        question=item["question"],
+                        options=item["options"],
+                        correct_option=item["correct_option"],
+                        explanation=item["explanation"],
+                        is_mock=True,
+                    )
+                    curr += 1
 
         logger.info(
             "Successfully delivered %d questions for '%s' -> '%s'.",
