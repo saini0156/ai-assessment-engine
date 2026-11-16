@@ -37,8 +37,8 @@ export function AuthShell({
             <Image
               src="/images/logowhite.png"
               alt="MindMark"
-              width={320}
-              height={160}
+              width={410}
+              height={200}
               priority
               className="h-24 w-auto object-contain sm:h-32 lg:h-28"
             />
