@@ -207,52 +207,74 @@ class LLMService:
         raise RuntimeError(f"All Groq keys and models failed. Last error: {last_error}")
 
     # -------------------------------------------------------------
-    # Gemini API Caller with 30s Timeout & Model Fallback
+    # High-Performance Gemini API Caller (Direct REST + SDK Fallback)
     # -------------------------------------------------------------
     def _call_gemini(self, prompt: str) -> Any:
         keys_to_try = list(self.gemini_keys)
         if not keys_to_try:
             raise RuntimeError("No Gemini API keys configured.")
 
-        try:
-            from google import genai
-        except ImportError:
-            raise RuntimeError("google-genai SDK not installed.")
-
         last_error = None
         for api_key in keys_to_try:
             masked = f"...{api_key[-4:]}" if len(api_key) >= 4 else "key"
-            try:
-                client = genai.Client(api_key=api_key)
-            except Exception as e:
-                logger.warning("Failed to initialize Gemini client for key %s: %s", masked, e)
-                continue
-
-            for gemini_model in ["gemini-3.8-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+            for gemini_model in ["gemini-2.0-flash", "gemini-1.5-flash"]:
+                # 1. Primary: Direct Fast REST API via httpx (No SDK dependency, universal key format support)
                 try:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={api_key}"
+                    payload = {
+                        "contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": {
+                            "responseMimeType": "application/json",
+                            "temperature": 0.2,
+                        }
+                    }
+                    resp = self._groq_client.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=25.0)
+                    if resp.status_code == 429:
+                        logger.warning("Gemini 429 rate limit hit on key %s. Rotating to next key...", masked)
+                        break
+                    resp.raise_for_status()
+                    data = resp.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        if parts:
+                            raw_text = parts[0].get("text", "").strip()
+                            cleaned = re.sub(r"^```(?:json)?\s*", "", raw_text, flags=re.MULTILINE)
+                            cleaned = re.sub(r"\s*```$", "", cleaned, flags=re.MULTILINE)
+                            parsed = json.loads(cleaned.strip())
+                            if isinstance(parsed, dict):
+                                for val in parsed.values():
+                                    if isinstance(val, list):
+                                        return val
+                            return parsed
+                except Exception as e_rest:
+                    last_error = e_rest
+                    logger.warning("Gemini REST model %s on key %s failed: %s", gemini_model, masked, e_rest)
+
+                # 2. Secondary: google-genai SDK if installed
+                try:
+                    from google import genai
+                    client = genai.Client(api_key=api_key)
                     def _execute():
                         return client.models.generate_content(
                             model=gemini_model,
                             contents=prompt,
                             config={"response_mime_type": "application/json"},
                         )
-
                     future = self._executor.submit(_execute)
-                    response = future.result(timeout=30.0)
-                    text = getattr(response, "text", "")
-                    if not text.strip():
-                        continue
-
-                    parsed = json.loads(text)
-                    if isinstance(parsed, dict):
-                        for val in parsed.values():
-                            if isinstance(val, list):
-                                return val
-                    return parsed
-                except Exception as e:
-                    last_error = e
-                    logger.warning("Gemini model %s on key %s failed: %s", gemini_model, masked, e)
-                    continue
+                    response = future.result(timeout=25.0)
+                    text = getattr(response, "text", "").strip()
+                    if text:
+                        cleaned = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
+                        cleaned = re.sub(r"\s*```$", "", cleaned, flags=re.MULTILINE)
+                        parsed = json.loads(cleaned.strip())
+                        if isinstance(parsed, dict):
+                            for val in parsed.values():
+                                if isinstance(val, list):
+                                    return val
+                        return parsed
+                except Exception as e_sdk:
+                    last_error = e_sdk
 
         raise RuntimeError(f"All Gemini models and keys failed. Last error: {last_error}")
 
@@ -263,40 +285,40 @@ class LLMService:
         is_hindi = bool(re.search(r'[\u0900-\u097F]', f"{subject} {text[:4000]}")) or "hindi" in (subject or "").lower()
         if is_hindi:
             lang_directive = (
-                "CRITICAL LANGUAGE PRESERVATION DIRECTIVE:\n"
+                "CRITICAL HINDI LANGUAGE ENFORCEMENT:\n"
                 "- The provided syllabus text is in HINDI (हिंदी).\n"
-                "- You MUST output all 'topic_name', 'subtopics', and 'summary' strictly in natural, fluent HINDI (हिंदी / Devanagari script).\n"
-                "- DO NOT translate Hindi topics into English. Keep the exact Hindi curriculum terminology."
+                "- You MUST output all 'topic_name', 'subtopics', and 'summary' strictly in natural, fluent NCERT standard HINDI (हिंदी / Devanagari script).\n"
+                "- Use authentic educational terminology. Keep standard English terms in parentheses for clarity: e.g. 'विद्युत धारा (Electric Current)'."
             )
         else:
             lang_directive = "LANGUAGE DIRECTIVE: Output all topic_name, subtopics, and summary in clear English matching the syllabus text."
 
         prompt = TOPIC_EXTRACTION_PROMPT.format(subject=subject, text=text[:12000], language_directive=lang_directive)
 
-        # Tier 1: Groq
-        if self.groq_pool.total_keys() > 0:
-            try:
-                data = self._call_groq(
-                    prompt,
-                    system_message="You are a syllabus parser that strictly outputs a JSON object containing a topics list.",
-                )
-                topics = TOPIC_LIST_ADAPTER.validate_python(data)
-                if len(topics) >= 1:
-                    logger.info("Successfully extracted %d topics via Groq (Primary).", len(topics))
-                    return topics
-            except Exception as e_groq:
-                logger.warning("Groq topic extraction failed (%s). Falling back to Gemini...", e_groq)
+        tier_order = ["gemini", "groq"] if is_hindi else ["groq", "gemini"]
+        for provider in tier_order:
+            if provider == "groq" and self.groq_pool.total_keys() > 0:
+                try:
+                    data = self._call_groq(
+                        prompt,
+                        system_message="You are a syllabus parser that strictly outputs a JSON object containing a topics list.",
+                    )
+                    topics = TOPIC_LIST_ADAPTER.validate_python(data)
+                    if len(topics) >= 1:
+                        logger.info("Successfully extracted %d topics via Groq (%s).", len(topics), "Fallback" if is_hindi else "Primary")
+                        return topics
+                except Exception as e_groq:
+                    logger.warning("Groq topic extraction failed (%s). Continuing fallback...", e_groq)
 
-        # Tier 2: Gemini
-        if len(self.gemini_keys) > 0:
-            try:
-                data = self._call_gemini(prompt)
-                topics = TOPIC_LIST_ADAPTER.validate_python(data)
-                if len(topics) >= 1:
-                    logger.info("Successfully extracted %d topics via Gemini (Fallback).", len(topics))
-                    return topics
-            except Exception as e_gem:
-                logger.warning("Gemini topic extraction failed (%s). Falling back to Mock engine...", e_gem)
+            elif provider == "gemini" and len(self.gemini_keys) > 0:
+                try:
+                    data = self._call_gemini(prompt)
+                    topics = TOPIC_LIST_ADAPTER.validate_python(data)
+                    if len(topics) >= 1:
+                        logger.info("Successfully extracted %d topics via Gemini (%s).", len(topics), "Primary" if is_hindi else "Fallback")
+                        return topics
+                except Exception as e_gem:
+                    logger.warning("Gemini topic extraction failed (%s). Continuing fallback...", e_gem)
 
         # Tier 3: Mock Fallback
         return MockAIEngine.extract_topics(subject, text)
@@ -343,10 +365,19 @@ class LLMService:
 
         if is_hindi:
             lang_directive = (
-                "CRITICAL LANGUAGE ENFORCEMENT:\n"
+                "CRITICAL HINDI LANGUAGE GUIDELINES (NCERT / CBSE STANDARD):\n"
                 "- The topic/subject is in HINDI (हिंदी).\n"
-                "- You MUST generate ALL questions, all 4 options (A, B, C, D), and all explanations STRICTLY in natural, fluent HINDI (हिंदी / Devanagari script).\n"
-                "- DO NOT output English text for questions, options, or explanations. Every question, option, and explanation must be in pure Hindi."
+                "- You MUST generate ALL questions, all 4 options (A, B, C, D), and all explanations strictly in natural, fluent NCERT standard educational Hindi (मानक शैक्षणिक हिंदी).\n"
+                "- Use authentic board-exam academic terminology:\n"
+                "  * Use 'अभिक्रिया' for Chemical Reaction (NOT 'प्रतिक्रिया')\n"
+                "  * Use 'विद्युत धारा' for Electric Current (NEVER 'वर्तमान')\n"
+                "  * Use 'विलयन' for Solution (NOT 'समाधान')\n"
+                "  * Use 'लेंस की क्षमता' for Power of Lens (NOT 'शक्ति')\n"
+                "  * Use 'मूल / शून्यक' for Roots/Zeroes of equations (NEVER 'जड़')\n"
+                "  * Use 'समकोण त्रिभुज' for Right-angled triangle (NOT 'सही कोण')\n"
+                "  * Use 'प्रतिरोध' for Resistance, 'विभवांतर' for Potential Difference\n"
+                "- For technical, biological, or modern terms, provide the English term in parentheses: e.g. 'अपवर्तन (Refraction)', 'माइटोकॉन्ड्रिया (Mitochondria)', 'ओम का नियम (Ohm\'s Law)'.\n"
+                "- Keep question phrasing standard and respectful: 'निम्नलिखित में से कौन सा कथन सही है?' or '...का मान ज्ञात कीजिए।'"
             )
         else:
             lang_directive = "LANGUAGE DIRECTIVE: Output all questions, options, and explanations in clear English."
@@ -399,28 +430,34 @@ class LLMService:
                     results.append(q)
             return results
 
-        # Tier 1: Groq
-        if self.groq_pool.total_keys() > 0:
-            try:
-                data = self._call_groq(
-                    prompt,
-                    system_message="You are an assessment engine that strictly outputs a JSON object containing a questions array.",
-                )
-                generated = _parse_generated(data)
-                if len(generated) > 0:
-                    return generated[:count]
-            except Exception as e_groq:
-                logger.warning("Groq chunk %d/%d failed (%s). Trying Gemini...", chunk_index, total_chunks, e_groq)
+        # Smart Language-Based Routing:
+        # Hindi -> Gemini 1st (Flawless NCERT Hindi), Groq 2nd fallback
+        # English -> Groq 1st (0.9s ultra-speed), Gemini 2nd fallback
+        tier_order = ["gemini", "groq"] if is_hindi else ["groq", "gemini"]
 
-        # Tier 2: Gemini
-        if len(self.gemini_keys) > 0:
-            try:
-                data = self._call_gemini(prompt)
-                generated = _parse_generated(data)
-                if len(generated) > 0:
-                    return generated[:count]
-            except Exception as e_gem:
-                logger.warning("Gemini chunk %d/%d failed (%s). Using subject-aware mock...", chunk_index, total_chunks, e_gem)
+        for provider in tier_order:
+            if provider == "groq" and self.groq_pool.total_keys() > 0:
+                try:
+                    data = self._call_groq(
+                        prompt,
+                        system_message="You are an assessment engine that strictly outputs a JSON object containing a questions array.",
+                    )
+                    generated = _parse_generated(data)
+                    if len(generated) > 0:
+                        logger.info("Chunk %d/%d generated via Groq (%s).", chunk_index, total_chunks, "Fallback" if is_hindi else "Primary")
+                        return generated[:count]
+                except Exception as e_groq:
+                    logger.warning("Groq chunk %d/%d failed (%s). Continuing fallback...", chunk_index, total_chunks, e_groq)
+
+            elif provider == "gemini" and len(self.gemini_keys) > 0:
+                try:
+                    data = self._call_gemini(prompt)
+                    generated = _parse_generated(data)
+                    if len(generated) > 0:
+                        logger.info("Chunk %d/%d generated via Gemini (%s).", chunk_index, total_chunks, "Primary" if is_hindi else "Fallback")
+                        return generated[:count]
+                except Exception as e_gem:
+                    logger.warning("Gemini chunk %d/%d failed (%s). Continuing fallback...", chunk_index, total_chunks, e_gem)
 
         # Tier 3: Subject-Aware Mock Engine for this chunk
         pool = MockAIEngine.get_pool(subject, topic, difficulty=diff_key)
@@ -635,35 +672,50 @@ class LLMService:
         # If pool had fewer questions than count, fill remainder safely
         if len(questions_dict) < count:
             deficit = count - len(questions_dict)
-            if self.groq_pool.total_keys() > 0:
+            is_hindi_lang = (language or "").strip().lower() == "hindi" or bool(re.search(r'[\u0900-\u097F]', f"{subject} {topic}"))
+            fill_lang_directive = (
+                "CRITICAL HINDI LANGUAGE GUIDELINES (NCERT / CBSE STANDARD):\n"
+                "- Generate ALL questions, options, and explanations strictly in fluent NCERT standard Hindi with parenthetical English terms."
+            ) if is_hindi_lang else "LANGUAGE DIRECTIVE: Output all questions, options, and explanations in clear English."
+
+            fill_tier = ["gemini", "groq"] if is_hindi_lang else ["groq", "gemini"]
+            fill_prompt = QUIZ_GENERATION_PROMPT.format(
+                count=deficit,
+                subject=subject,
+                topic=topic,
+                difficulty=difficulty,
+                difficulty_directive=DIFFICULTY_DIRECTIVES.get(difficulty, DIFFICULTY_DIRECTIVES["Medium"]),
+                language_directive=fill_lang_directive,
+                mode_directive=MODE_DIRECTIVES.get(mode_clean, MODE_DIRECTIVES["hybrid"]),
+                context_block=f"REFERENCE NOTES:\n{notes_context[:8000]}" if notes_context else "",
+            )
+            for fill_prov in fill_tier:
+                if len(questions_dict) >= count:
+                    break
                 try:
-                    fill_prompt = QUIZ_GENERATION_PROMPT.format(
-                        count=deficit,
-                        subject=subject,
-                        topic=topic,
-                        difficulty=difficulty,
-                        difficulty_directive=DIFFICULTY_DIRECTIVES.get(difficulty, DIFFICULTY_DIRECTIVES["Medium"]),
-                        language_directive="LANGUAGE DIRECTIVE: Output all questions, options, and explanations in clear English.",
-                        mode_directive=MODE_DIRECTIVES.get(mode_clean, MODE_DIRECTIVES["hybrid"]),
-                        context_block=f"REFERENCE NOTES:\n{notes_context[:8000]}" if notes_context else "",
-                    )
-                    data = self._call_groq(fill_prompt)
-                    extra_qs = _parse_generated(data)
-                    for eq in extra_qs:
-                        if len(questions_dict) >= count:
-                            break
-                        if eq.question.strip().lower() not in {q.question.strip().lower() for q in questions_dict.values()}:
-                            qid = f"q_{len(questions_dict) + 1}"
-                            questions_dict[qid] = InternalQuestion(
-                                id=qid,
-                                question=eq.question.strip(),
-                                options=eq.options,
-                                correct_option=eq.correct_option,
-                                explanation=eq.explanation.strip(),
-                                is_mock=False,
-                            )
+                    data = None
+                    if fill_prov == "gemini" and len(self.gemini_keys) > 0:
+                        data = self._call_gemini(fill_prompt)
+                    elif fill_prov == "groq" and self.groq_pool.total_keys() > 0:
+                        data = self._call_groq(fill_prompt)
+
+                    if data:
+                        extra_qs = _parse_generated(data)
+                        for eq in extra_qs:
+                            if len(questions_dict) >= count:
+                                break
+                            if eq.question.strip().lower() not in {q.question.strip().lower() for q in questions_dict.values()}:
+                                qid = f"q_{len(questions_dict) + 1}"
+                                questions_dict[qid] = InternalQuestion(
+                                    id=qid,
+                                    question=eq.question.strip(),
+                                    options=eq.options,
+                                    correct_option=eq.correct_option,
+                                    explanation=eq.explanation.strip(),
+                                    is_mock=False,
+                                )
                 except Exception as e_fill:
-                    logger.warning("Failed to AI-fill question deficit: %s", e_fill)
+                    logger.warning("Failed to AI-fill question deficit via %s: %s", fill_prov, e_fill)
 
             # If still short, fallback safely with is_mock=True
             if len(questions_dict) < count:
@@ -726,25 +778,29 @@ class LLMService:
 
         required_keys = ["simplified_explanation", "memory_tip", "real_world_example"]
 
-        # Tier 1: Groq
-        if self.groq_pool.total_keys() > 0:
-            try:
-                data = self._call_groq(prompt)
-                if all(k in data and isinstance(data[k], str) and data[k].strip() for k in required_keys):
-                    logger.info("AI Tutor explanation generated via Groq (Primary).")
-                    return {k: data[k].strip() for k in required_keys}
-            except Exception as e_groq:
-                logger.warning("Groq tutor explanation failed (%s). Falling back to Gemini...", e_groq)
+        # Smart Language Routing for AI Tutor:
+        # Hindi -> Gemini 1st (Empathetic, authentic Hindi tutoring), Groq 2nd fallback
+        # English -> Groq 1st, Gemini 2nd fallback
+        tier_order = ["gemini", "groq"] if is_hindi else ["groq", "gemini"]
 
-        # Tier 2: Gemini
-        if len(self.gemini_keys) > 0:
-            try:
-                data = self._call_gemini(prompt)
-                if all(k in data and isinstance(data[k], str) and data[k].strip() for k in required_keys):
-                    logger.info("AI Tutor explanation generated via Gemini (Fallback).")
-                    return {k: data[k].strip() for k in required_keys}
-            except Exception as e_gem:
-                logger.warning("Gemini tutor explanation failed (%s). Falling back to Mock engine...", e_gem)
+        for provider in tier_order:
+            if provider == "groq" and self.groq_pool.total_keys() > 0:
+                try:
+                    data = self._call_groq(prompt)
+                    if all(k in data and isinstance(data[k], str) and data[k].strip() for k in required_keys):
+                        logger.info("AI Tutor explanation generated via Groq (%s).", "Fallback" if is_hindi else "Primary")
+                        return {k: data[k].strip() for k in required_keys}
+                except Exception as e_groq:
+                    logger.warning("Groq tutor explanation failed (%s). Continuing fallback...", e_groq)
+
+            elif provider == "gemini" and len(self.gemini_keys) > 0:
+                try:
+                    data = self._call_gemini(prompt)
+                    if all(k in data and isinstance(data[k], str) and data[k].strip() for k in required_keys):
+                        logger.info("AI Tutor explanation generated via Gemini (%s).", "Primary" if is_hindi else "Fallback")
+                        return {k: data[k].strip() for k in required_keys}
+                except Exception as e_gem:
+                    logger.warning("Gemini tutor explanation failed (%s). Continuing fallback...", e_gem)
 
         # Tier 3: Mock Fallback
         return MockAIEngine.explain_mistake(question, selected_option, correct_option, explanation)
