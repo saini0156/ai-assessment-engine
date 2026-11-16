@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { faqs, type FAQ } from "@/data/faqs";
@@ -11,10 +12,10 @@ type FAQAccordionProps = {
 };
 
 const faqImages = [
-  "/images/img1.jpg",
-  "/images/img2.jpg",
-  "/images/img3.jpg",
-  "/images/img4.jpg",
+  "/images/img1.webp",
+  "/images/img2.webp",
+  "/images/img3.webp",
+  "/images/img4.webp",
 ];
 
 export default function FAQAccordion({
@@ -45,21 +46,20 @@ export default function FAQAccordion({
               delay={index * 0.08}
               duration={0.6}
             >
-              <div
-                className="relative isolate flex h-[130px] w-full flex-col justify-center overflow-hidden rounded-2xl bg-[#111827] shadow-md transition duration-300 hover:-translate-y-1 hover:shadow-xl"
-                style={{
-                  backgroundImage: `
-                    linear-gradient(
-                      135deg,
-                      rgba(7,13,30,0.82),
-                      rgba(7,13,30,0.55)
-                    ),
-                    url("${faqImages[index % faqImages.length]}")
-                  `,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                }}
-              >
+              <div className="relative isolate flex h-[130px] w-full flex-col justify-center overflow-hidden rounded-2xl bg-[#111827] shadow-md transition duration-300 hover:-translate-y-1 hover:shadow-xl">
+                {/* Card image (optimized by Next.js, lazy loaded) */}
+                <Image
+                  src={faqImages[index % faqImages.length]}
+                  alt=""
+                  fill
+                  sizes="(min-width: 1024px) 50vw, 100vw"
+                  quality={65}
+                  className="-z-20 object-cover object-center"
+                />
+
+                {/* Gradient overlay (same colours as before) */}
+                <div className="absolute inset-0 -z-10 bg-gradient-to-br from-[rgba(7,13,30,0.82)] to-[rgba(7,13,30,0.55)]" />
+
                 <div className="flex flex-col justify-center px-5 py-3">
                   <h3 className="line-clamp-1 text-base font-bold leading-snug text-white">
                     {faq.question}

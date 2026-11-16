@@ -1,10 +1,19 @@
-
+import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Upload } from "lucide-react";
 
 export function CtaSection() {
   return (
-    <section className="relative isolate flex min-h-[380px] items-center justify-center overflow-hidden rounded-3xl bg-[url('/images/banner.jpg')] bg-cover bg-center px-6 py-16 text-white sm:px-12">
+    <section className="relative isolate flex min-h-[380px] items-center justify-center overflow-hidden rounded-3xl px-6 py-16 text-white sm:px-12">
+      {/* Background image (optimized by Next.js, lazy loaded: it's below the fold) */}
+      <Image
+        src="/images/banner.webp"
+        alt=""
+        fill
+        sizes="100vw"
+        quality={70}
+        className="-z-20 object-cover object-center"
+      />
 
       {/* Dark Overlay */}
       <div className="absolute inset-0 -z-10 bg-black/60" />

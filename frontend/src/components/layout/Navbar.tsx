@@ -126,28 +126,27 @@ export function Navbar() {
       >
         <div className="flex h-16 w-full items-center justify-between px-4 sm:px-8 lg:px-12">
           {/* Logo: white over the hero, black on the white bar */}
+          {/* Logo: white over the hero, black on the white bar */}
           <Link href="/" aria-label="MindMark home" className="flex items-center">
             {/* White logo */}
             <Image
               src="/images/logowhite.png"
               alt="MindMark"
-              width={160}
-              height={56}
+              width={205}
+              height={100}
               priority
-              className={`h-12 w-auto object-contain sm:h-14 ${
-                !isHome ? "hidden" : transparent ? "block" : "block sm:hidden"
-              }`}
+              className={`h-12 w-auto object-contain sm:h-14 ${!isHome ? "hidden" : transparent ? "block" : "block sm:hidden"
+                }`}
             />
             {/* Black logo */}
             <Image
               src="/images/logoblack.png"
               alt="MindMark"
-              width={160}
-              height={56}
+              width={205}
+              height={100}
               priority
-              className={`h-12 w-auto rounded-lg object-contain sm:h-14 ${
-                !isHome ? "block" : transparent ? "hidden" : "hidden sm:block"
-              }`}
+              className={`h-12 w-auto rounded-lg object-contain sm:h-14 ${!isHome ? "block" : transparent ? "hidden" : "hidden sm:block"
+                }`}
             />
           </Link>
 
@@ -159,15 +158,14 @@ export function Navbar() {
                 <Link
                   key={l.href}
                   href={l.href}
-                  className={`flex h-full items-center border-b-2 text-lg font-medium transition-colors ${
-                    transparent
+                  className={`flex h-full items-center border-b-2 text-lg font-medium transition-colors ${transparent
                       ? active
                         ? "border-white text-white"
                         : "border-transparent text-white/80 hover:text-white"
                       : active
                         ? "border-black text-black"
                         : "border-transparent text-stone-600 hover:text-black"
-                  }`}
+                    }`}
                 >
                   {l.label}
                 </Link>
@@ -231,11 +229,10 @@ export function Navbar() {
             {/* Desktop CTA */}
             <Link
               href="/quiz/new"
-              className={`hidden items-center gap-2 rounded-full px-5 py-2.5 text-lg font-semibold transition-colors sm:inline-flex ${
-                transparent
+              className={`hidden items-center gap-2 rounded-full px-5 py-2.5 text-lg font-semibold transition-colors sm:inline-flex ${transparent
                   ? "bg-white text-black hover:bg-stone-100"
                   : "bg-black text-white hover:bg-stone-800"
-              }`}
+                }`}
             >
               Take a Quiz
               <ArrowRight className="h-3.5 w-3.5" />
@@ -311,9 +308,8 @@ function NavItem({
       >
         <Icon className={`h-5 w-5 transition-colors ${active ? "text-white" : "text-stone-400"}`} />
         <span
-          className={`whitespace-nowrap text-[10px] font-medium transition-colors ${
-            active ? "text-white" : "text-stone-400"
-          }`}
+          className={`whitespace-nowrap text-[10px] font-medium transition-colors ${active ? "text-white" : "text-stone-400"
+            }`}
         >
           {label}
         </span>
