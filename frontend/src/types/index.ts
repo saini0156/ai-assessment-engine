@@ -35,6 +35,7 @@ export interface QuizGenerateRequest {
   topic: string;
   count: number;
   difficulty: "Easy" | "Medium" | "Hard" | string;
+  mode: "notes" | "hybrid" | "ai";
 }
 
 export interface QuizGenerateResponse {
