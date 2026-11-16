@@ -160,11 +160,13 @@ class LLMService:
             user_prompt += "\nOutput strictly as a JSON object."
         messages.append({"role": "user", "content": user_prompt})
 
-        # High-speed active Groq model list prioritized by response latency
+        # High-speed active Groq model list prioritized by response latency and account availability
         models_to_try = [
-            "llama-3.3-70b-versatile",   # Flagship high-accuracy reasoning (~1.2s response)
-            "llama-3.1-8b-instant",      # Ultra-fast fallback (~0.8s response)
-            "mixtral-8x7b-32768",        # High capacity fallback
+            "qwen/qwen3.8-27b",          # Verified active on account (~0.9s response)
+            "openai/gpt-oss-20b",        # Verified active on account (~1.2s response)
+            "openai/gpt-oss-120b",       # High capacity fallback
+            "llama-3.3-70b-versatile",   # Standard cloud fallback
+            "llama-3.1-8b-instant",      # Standard cloud fallback
         ]
 
         last_error = None
