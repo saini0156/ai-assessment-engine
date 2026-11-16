@@ -44,6 +44,7 @@ async def generate_quiz(
         force_fresh=getattr(request, "fresh", False),
         context=getattr(request, "context", None),
         is_full_syllabus=getattr(request, "is_full_syllabus", False) or request.topic.strip().lower() in ["all topics", "full syllabus", "all", "entire syllabus"],
+        mode=getattr(request, "mode", "hybrid"),
     )
     
     # Store securely in server-side session store

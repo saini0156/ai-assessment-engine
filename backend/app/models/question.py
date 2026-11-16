@@ -58,7 +58,7 @@ class Question(Base):
 
     subject_id: Mapped[str] = mapped_column(
         String(36),
-        ForeignKey("subjects.id", ondelete="RESTRICT"),
+        ForeignKey("subjects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

@@ -50,6 +50,19 @@ class QuizGenerateRequest(BaseModel):
     fresh: Optional[bool] = Field(False, description="Set True to force fresh AI generation instead of using question bank")
     context: Optional[str] = Field(None, description="Optional raw notes text to ground questions directly in document material")
     is_full_syllabus: Optional[bool] = Field(False, description="Set True to distribute questions evenly across all syllabus topics")
+    mode: Optional[str] = Field("hybrid", description="Quiz mode: 'notes' (100% textbook notes), 'hybrid' (notes theory + AI real-world application), or 'ai' (broad AI curriculum knowledge)")
+
+    @field_validator("mode")
+    @classmethod
+    def normalize_mode(cls, v: Optional[str]) -> str:
+        if not v:
+            return "hybrid"
+        val = str(v).strip().lower().replace(" ", "_").replace("-", "_")
+        if val in ["notes", "strict_notes", "strict", "note"]:
+            return "notes"
+        if val in ["ai", "open_ai", "open", "llm"]:
+            return "ai"
+        return "hybrid"
 
     @field_validator("difficulty")
     @classmethod
