@@ -411,8 +411,8 @@ class MockAIEngine:
                 },
             ]
 
-        # 5. Default Computer Science / Software Engineering Bank
-        else:
+        # 5. Computer Science / Software Engineering Bank
+        elif any(k in combined for k in ["cs", "computer", "program", "code", "software", "oop", "java", "python", "data struct", "algo"]):
             raw_pool = [
                 {
                     "question": "Which OOP principle restricts direct external access to an object's internal representation?",
@@ -440,6 +440,57 @@ class MockAIEngine:
                 },
             ]
 
+        # 6. General Subject-Aware Conceptual Bank (Strictly avoids unrelated CS/OOP questions)
+        else:
+            subj_title = subject.strip().title() if subject else "General Domain"
+            top_title = topic.strip().title() if topic else "Foundations"
+            raw_pool = [
+                {
+                    "question": f"Which of the following is considered a core foundational concept in {top_title} ({subj_title})?",
+                    "options": {
+                        "A": f"Structured analysis and foundational principles of {top_title}",
+                        "B": "Arbitrary assumptions without observational baseline",
+                        "C": "Ignoring verifiable evidence and core methodology",
+                        "D": "Applying unrelated domain principles without validation"
+                    },
+                    "correct_option": "A",
+                    "explanation": f"Understanding {top_title} requires structured analysis aligned directly with the primary principles of {subj_title}.",
+                },
+                {
+                    "question": f"What is the primary analytical objective when studying {top_title} in {subj_title}?",
+                    "options": {
+                        "A": "Developing a consistent conceptual understanding of key mechanisms",
+                        "B": "Eliminating systematic verification procedures",
+                        "C": "Introducing random variance into structured assessments",
+                        "D": "Replacing foundational rules with unverified guesses"
+                    },
+                    "correct_option": "A",
+                    "explanation": f"The primary goal in {top_title} is establishing clear conceptual mastery and standard evaluation criteria for {subj_title}.",
+                },
+                {
+                    "question": f"In {subj_title}, which method ensures the most reliable evaluation of {top_title}?",
+                    "options": {
+                        "A": "Systematic cross-examination of evidence against established standards",
+                        "B": "Relying strictly on unverified subjective assumptions",
+                        "C": "Bypassing standard validation and analytical protocols",
+                        "D": "Using contradictory metrics across identical scenarios"
+                    },
+                    "correct_option": "A",
+                    "explanation": f"Rigorous validation and systematic evaluation ensure consistent, reliable conclusions in {top_title}.",
+                },
+                {
+                    "question": f"Why is comprehensive analysis of {top_title} essential for proficiency in {subj_title}?",
+                    "options": {
+                        "A": "It builds the prerequisite knowledge required for advanced problem-solving",
+                        "B": "It prevents objective verification of domain principles",
+                        "C": "It removes the necessity for accurate analytical frameworks",
+                        "D": "It replaces domain knowledge with unrelated technical terms"
+                    },
+                    "correct_option": "A",
+                    "explanation": f"Mastery of {top_title} provides the critical foundation for advanced comprehension in {subj_title}.",
+                },
+            ]
+
         # Prioritize foundational questions for Easy, and multi-step advanced questions for Hard
         if diff == "Hard" and len(raw_pool) > 5:
             return raw_pool[len(raw_pool) // 2 :] + raw_pool[: len(raw_pool) // 2]
@@ -461,6 +512,7 @@ class MockAIEngine:
                 options=item["options"],
                 correct_option=item["correct_option"],
                 explanation=item["explanation"],
+                is_mock=True,
             )
 
         return InternalQuizSession(

@@ -113,6 +113,7 @@ class InternalQuestion(BaseModel):
     options: Dict[str, str]
     correct_option: str
     explanation: str
+    is_mock: bool = False
 
     @field_validator("correct_option")
     @classmethod

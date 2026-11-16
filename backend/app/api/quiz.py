@@ -35,16 +35,27 @@ async def generate_quiz(
     and NEVER sent to the client browser until submission.
     """
     # Generate full quiz session with internal answer keys and notes grounding
+    user_mode = getattr(request, "mode", "hybrid")
+    has_notes = bool(getattr(request, "context", None))
+    if not has_notes and db_service and user_mode != "ai":
+        try:
+            has_notes = bool(db_service.get_notes_for_topic(request.subject, request.topic))
+        except Exception:
+            has_notes = False
+
+    # Force fresh generation for custom notes or notes/hybrid modes to strictly adhere to source text
+    force_fresh = getattr(request, "fresh", False) or has_notes or (user_mode in ["notes", "strict_notes", "hybrid"])
+
     internal_session = llm_service.generate_quiz(
         subject=request.subject,
         topic=request.topic,
         count=request.count,
         difficulty=request.difficulty,
         language=getattr(request, "language", "Auto"),
-        force_fresh=getattr(request, "fresh", False),
+        force_fresh=force_fresh,
         context=getattr(request, "context", None),
         is_full_syllabus=getattr(request, "is_full_syllabus", False) or request.topic.strip().lower() in ["all topics", "full syllabus", "all", "entire syllabus"],
-        mode=getattr(request, "mode", "hybrid"),
+        mode=user_mode,
     )
     
     # Store securely in server-side session store
