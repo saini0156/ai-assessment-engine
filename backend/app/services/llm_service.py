@@ -611,7 +611,7 @@ class LLMService:
 
         # Tier 3: Subject-Aware Mock Engine for this chunk
         pool = MockAIEngine.get_pool(subject, topic, difficulty=diff_key)
-        offset = (chunk_index - 1) * 10
+        offset = (chunk_index - 1) * count
         chunk_questions: List[InternalQuestion] = []
         for i in range(count):
             item = pool[(offset + i) % len(pool)]
@@ -893,22 +893,22 @@ class LLMService:
                 except Exception as e_fill:
                     logger.warning("Failed to AI-fill question deficit via %s: %s", fill_prov, e_fill)
 
-            # If still short, fallback safely with is_mock=True
+            # If still short, fallback safely with is_mock=True, strictly enforcing zero duplicates
             if len(questions_dict) < count:
                 pool = MockAIEngine.get_pool(subject, topic, difficulty=difficulty)
-                curr = len(questions_dict) + 1
-                while curr <= count:
-                    item = pool[curr % len(pool)]
-                    qid = f"q_{curr}"
-                    questions_dict[qid] = InternalQuestion(
-                        id=qid,
+                for item in pool:
+                    if len(questions_dict) >= count:
+                        break
+                    candidate = InternalQuestion(
+                        id=f"q_{len(questions_dict) + 1}",
                         question=item["question"],
                         options=item["options"],
                         correct_option=item["correct_option"],
                         explanation=item["explanation"],
                         is_mock=True,
                     )
-                    curr += 1
+                    if not is_duplicate_question(candidate, list(questions_dict.values())):
+                        questions_dict[candidate.id] = candidate
 
         logger.info(
             "Successfully delivered %d questions for '%s' -> '%s'.",

@@ -489,6 +489,72 @@ class MockAIEngine:
                     "correct_option": "A",
                     "explanation": f"Mastery of {top_title} provides the critical foundation for advanced comprehension in {subj_title}.",
                 },
+                {
+                    "question": f"How are critical edge cases and anomalies typically identified within {top_title} ({subj_title})?",
+                    "options": {
+                        "A": "Through systematic stress-testing across boundary parameters",
+                        "B": "By ignoring deviations that contradict initial expectations",
+                        "C": "By removing boundary condition checks from the protocol",
+                        "D": "By relying solely on superficial observational data"
+                    },
+                    "correct_option": "A",
+                    "explanation": f"Edge cases in {top_title} are rigorously surfaced by validating conditions near operational boundaries.",
+                },
+                {
+                    "question": f"What distinguishes advanced problem-solving from basic recall in {top_title}?",
+                    "options": {
+                        "A": "Synthesizing multiple interacting principles to solve novel scenarios",
+                        "B": "Memorizing single formulas without understanding application contexts",
+                        "C": "Relying on trial and error without theoretical guidance",
+                        "D": "Ignoring contextual constraints when applying definitions"
+                    },
+                    "correct_option": "A",
+                    "explanation": f"Advanced competence in {subj_title} requires contextual synthesis and multi-variable evaluation.",
+                },
+                {
+                    "question": f"How do practitioners in {subj_title} validate theoretical models of {top_title}?",
+                    "options": {
+                        "A": "Empirical testing and verification against controlled observations",
+                        "B": "Selecting only data points that conform to predetermined outcomes",
+                        "C": "Eliminating iterative measurement in favor of intuition",
+                        "D": "Assuming theoretical models require no external validation"
+                    },
+                    "correct_option": "A",
+                    "explanation": f"Empirical validation against real-world observations ensures model reliability in {top_title}.",
+                },
+                {
+                    "question": f"What is the primary risk of omitting structured verification protocols in {top_title}?",
+                    "options": {
+                        "A": "Compounding procedural errors and reaching false diagnostic conclusions",
+                        "B": "Accelerating the discovery of verified fundamental truths",
+                        "C": "Guaranteeing optimal performance under extreme conditions",
+                        "D": "Improving accuracy across independent evaluators"
+                    },
+                    "correct_option": "A",
+                    "explanation": f"Lack of verification protocols in {subj_title} leads to diagnostic traps and unverified conclusions.",
+                },
+                {
+                    "question": f"Which standard practice ensures repeatable and objective results when analyzing {top_title}?",
+                    "options": {
+                        "A": "Standardized documentation and consistent measurement metrics",
+                        "B": "Altering evaluation criteria between testing sessions",
+                        "C": "Excluding comparative benchmarks from analytical reports",
+                        "D": "Using non-standardized terminology to describe core behaviors"
+                    },
+                    "correct_option": "A",
+                    "explanation": f"Standardized documentation and uniform metrics ensure analytical repeatability in {subj_title}.",
+                },
+                {
+                    "question": f"How should conflicting evidence or anomalous observations be handled in {top_title} ({subj_title})?",
+                    "options": {
+                        "A": "Investigated through targeted diagnostic tests to refine existing models",
+                        "B": "Discarded immediately to maintain simple theoretical assumptions",
+                        "C": "Reported as universal rules without further investigation",
+                        "D": "Assumed to be computational noise without verification"
+                    },
+                    "correct_option": "A",
+                    "explanation": f"Anomalies in {top_title} present opportunities to refine and expand analytical accuracy through diagnostic scrutiny.",
+                },
             ]
 
         # Prioritize foundational questions for Easy, and multi-step advanced questions for Hard
