@@ -21,6 +21,10 @@ class Settings:
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
+    # FreeLLMAPI Local / Cloud Gateway
+    FREELLMAPI_URL: str = os.getenv("FREELLMAPI_URL", "").strip().strip('"').strip("'")
+    FREELLMAPI_KEY: str = os.getenv("FREELLMAPI_KEY", "").strip().strip('"').strip("'")
+
     # CORS & Database
     FRONTEND_ORIGINS: str = os.getenv("FRONTEND_ORIGINS", "http://localhost:3000")
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")

@@ -279,6 +279,51 @@ class LLMService:
         raise RuntimeError(f"All Gemini models and keys failed. Last error: {last_error}")
 
     # -------------------------------------------------------------
+    # FreeLLMAPI Unified Gateway Caller (14-Key Pool with Failover)
+    # -------------------------------------------------------------
+    def _call_freellmapi(self, prompt: str, model: str = "auto", system_message: str = "") -> Any:
+        if not settings.FREELLMAPI_URL or not settings.FREELLMAPI_KEY:
+            raise RuntimeError("FreeLLMAPI is not configured.")
+
+        url = f"{settings.FREELLMAPI_URL.rstrip('/')}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {settings.FREELLMAPI_KEY}",
+            "Content-Type": "application/json",
+        }
+
+        messages = []
+        if system_message:
+            messages.append({"role": "system", "content": system_message})
+        user_prompt = prompt
+        if "json" not in user_prompt.lower():
+            user_prompt += "\nOutput strictly as a JSON object."
+        messages.append({"role": "user", "content": user_prompt})
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+            "temperature": 0.2,
+        }
+
+        resp = self._groq_client.post(url, json=payload, headers=headers, timeout=25.0)
+        resp.raise_for_status()
+
+        routed_via = resp.headers.get("x-routed-via", "freellmapi")
+        logger.info("FreeLLMAPI fulfilled request via: %s", routed_via)
+
+        content = resp.json()["choices"][0]["message"]["content"]
+        cleaned = re.sub(r"^```(?:json)?\s*", "", content.strip(), flags=re.MULTILINE)
+        cleaned = re.sub(r"\s*```$", "", cleaned.strip(), flags=re.MULTILINE)
+        parsed = json.loads(cleaned)
+
+        if isinstance(parsed, dict):
+            for val in parsed.values():
+                if isinstance(val, list):
+                    return val
+        return parsed
+
+    # -------------------------------------------------------------
     # Topic Extraction Cascade
     # -------------------------------------------------------------
     def extract_topics(self, subject: str, text: str) -> List[TopicItem]:
@@ -294,6 +339,22 @@ class LLMService:
             lang_directive = "LANGUAGE DIRECTIVE: Output all topic_name, subtopics, and summary in clear English matching the syllabus text."
 
         prompt = TOPIC_EXTRACTION_PROMPT.format(subject=subject, text=text[:12000], language_directive=lang_directive)
+
+        # Tier 0: FreeLLMAPI Unified Gateway (14-Key Pool)
+        if settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY:
+            try:
+                target_model = "gemini-flash" if is_hindi else "qwen3.8-27b"
+                data = self._call_freellmapi(
+                    prompt,
+                    model=target_model,
+                    system_message="You are a syllabus parser that strictly outputs a JSON object containing a topics list.",
+                )
+                topics = TOPIC_LIST_ADAPTER.validate_python(data)
+                if len(topics) >= 1:
+                    logger.info("Successfully extracted %d topics via FreeLLMAPI (%s).", len(topics), target_model)
+                    return topics
+            except Exception as e_free:
+                logger.warning("FreeLLMAPI topic extraction failed (%s). Continuing direct fallback...", e_free)
 
         tier_order = ["gemini", "groq"] if is_hindi else ["groq", "gemini"]
         for provider in tier_order:
@@ -429,6 +490,22 @@ class LLMService:
                 if q:
                     results.append(q)
             return results
+
+        # Tier 0: FreeLLMAPI Unified Gateway (14-Key Pool)
+        if settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY:
+            try:
+                target_model = "gemini-flash" if is_hindi else "qwen3.8-27b"
+                data = self._call_freellmapi(
+                    prompt,
+                    model=target_model,
+                    system_message="You are an assessment engine that strictly outputs a JSON object containing a questions array.",
+                )
+                generated = _parse_generated(data)
+                if len(generated) > 0:
+                    logger.info("Chunk %d/%d generated via FreeLLMAPI (%s).", chunk_index, total_chunks, target_model)
+                    return generated[:count]
+            except Exception as e_free:
+                logger.warning("FreeLLMAPI chunk %d/%d failed (%s). Continuing direct fallback...", chunk_index, total_chunks, e_free)
 
         # Smart Language-Based Routing:
         # Hindi -> Gemini 1st (Flawless NCERT Hindi), Groq 2nd fallback
@@ -689,6 +766,30 @@ class LLMService:
                 mode_directive=MODE_DIRECTIVES.get(mode_clean, MODE_DIRECTIVES["hybrid"]),
                 context_block=f"REFERENCE NOTES:\n{notes_context[:8000]}" if notes_context else "",
             )
+
+            # Tier 0: FreeLLMAPI Unified Gateway
+            if settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY and len(questions_dict) < count:
+                try:
+                    target_model = "gemini-flash" if is_hindi_lang else "qwen3.8-27b"
+                    data = self._call_freellmapi(fill_prompt, model=target_model)
+                    if data:
+                        extra_qs = _parse_generated(data)
+                        for eq in extra_qs:
+                            if len(questions_dict) >= count:
+                                break
+                            if eq.question.strip().lower() not in {q.question.strip().lower() for q in questions_dict.values()}:
+                                qid = f"q_{len(questions_dict) + 1}"
+                                questions_dict[qid] = InternalQuestion(
+                                    id=qid,
+                                    question=eq.question.strip(),
+                                    options=eq.options,
+                                    correct_option=eq.correct_option,
+                                    explanation=eq.explanation.strip(),
+                                    is_mock=False,
+                                )
+                except Exception as e_fill_free:
+                    logger.warning("FreeLLMAPI deficit fill failed (%s). Continuing direct fallback...", e_fill_free)
+
             for fill_prov in fill_tier:
                 if len(questions_dict) >= count:
                     break
@@ -777,6 +878,17 @@ class LLMService:
         )
 
         required_keys = ["simplified_explanation", "memory_tip", "real_world_example"]
+
+        # Tier 0: FreeLLMAPI Unified Gateway
+        if settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY:
+            try:
+                target_model = "gemini-flash" if is_hindi else "qwen3.8-27b"
+                data = self._call_freellmapi(prompt, model=target_model)
+                if all(k in data and isinstance(data[k], str) and data[k].strip() for k in required_keys):
+                    logger.info("AI Tutor explanation generated via FreeLLMAPI (%s).", target_model)
+                    return {k: data[k].strip() for k in required_keys}
+            except Exception as e_free:
+                logger.warning("FreeLLMAPI tutor explanation failed (%s). Continuing direct fallback...", e_free)
 
         # Smart Language Routing for AI Tutor:
         # Hindi -> Gemini 1st (Empathetic, authentic Hindi tutoring), Groq 2nd fallback
