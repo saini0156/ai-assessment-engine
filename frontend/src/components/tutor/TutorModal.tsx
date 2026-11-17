@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "@/lib/api";
 import { TutorExplainResponse } from "@/types";
+import { MathText } from "@/components/ui/MathText";
 import { Globe2, Lightbulb, RotateCcw, Sparkles, X } from "lucide-react";
 
 interface TutorModalProps {
@@ -239,7 +240,7 @@ export function TutorModal({
               <p className="mb-1 text-xs font-bold uppercase tracking-widest text-stone-500">
                 Simplified explanation
               </p>
-              {data.simplified_explanation}
+              <MathText text={data.simplified_explanation} />
             </Bubble>
           )}
 
@@ -251,7 +252,9 @@ export function TutorModal({
                 <Lightbulb className="h-3.5 w-3.5" />
                 Memory tip &amp; catchphrase
               </p>
-              <span className="font-medium">{data.memory_tip}</span>
+              <span className="font-medium">
+                <MathText text={data.memory_tip} />
+              </span>
             </Bubble>
           )}
 
@@ -263,7 +266,7 @@ export function TutorModal({
                 <Globe2 className="h-3.5 w-3.5" />
                 Real-world analogy
               </p>
-              {data.real_world_example}
+              <MathText text={data.real_world_example} />
             </Bubble>
           )}
         </div>

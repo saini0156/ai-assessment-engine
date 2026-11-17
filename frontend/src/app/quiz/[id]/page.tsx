@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { QuizGenerateResponse, PublicQuestion } from "@/types";
 import { apiClient } from "@/lib/api";
+import { MathText } from "@/components/ui/MathText";
 import {
   AlertCircle,
   ArrowLeft,
@@ -351,7 +352,7 @@ export default function QuizPlayerPage({
             {/* Question + options (scrolls inside only if very long) */}
             <div className="mt-3 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
               <h3 className="text-lg font-bold leading-snug text-stone-900 sm:text-xl lg:text-2xl">
-                {currentQ.question}
+                <MathText text={currentQ.question} />
               </h3>
 
               <div className="mt-3 space-y-2 sm:mt-4 sm:space-y-2.5">
@@ -378,7 +379,7 @@ export default function QuizPlayerPage({
                         {key}
                       </span>
                       <span className="text-[15px] font-medium text-stone-900 sm:text-base">
-                        {label}
+                        <MathText text={label} />
                       </span>
                     </button>
                   );

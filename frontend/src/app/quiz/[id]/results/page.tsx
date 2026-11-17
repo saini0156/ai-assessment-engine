@@ -4,6 +4,7 @@ import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { QuizSubmitResponse, QuestionReview } from "@/types";
 import { TutorModal } from "@/components/tutor/TutorModal";
+import { MathText } from "@/components/ui/MathText";
 import { CheckCircle2, XCircle, Sparkles, RotateCcw, Home } from "lucide-react";
 import Link from "next/link";
 
@@ -236,7 +237,7 @@ export default function QuizResultsPage({ params }: { params: Promise<{ id: stri
                     </span>
                   </div>
                   <h3 className="mt-1.5 text-base font-bold leading-snug text-stone-900 sm:text-lg">
-                    {rev.question}
+                    <MathText text={rev.question} />
                   </h3>
                 </div>
               </div>
@@ -261,7 +262,7 @@ export default function QuizResultsPage({ params }: { params: Promise<{ id: stri
               {/* Explanation */}
               <div className="mt-3 rounded-xl bg-stone-50 px-3.5 py-3 text-sm leading-relaxed text-stone-600">
                 <span className="font-semibold text-stone-900">Explanation: </span>
-                {rev.explanation}
+                <MathText text={rev.explanation} />
               </div>
 
               {/* AI tutor on wrong answers */}
