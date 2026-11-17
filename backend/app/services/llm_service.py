@@ -77,13 +77,86 @@ def normalize_ai_question(item: Any, idx: int) -> Optional[InternalQuestion]:
     if not explanation:
         explanation = f"Option {clean_correct} is the verified correct answer for this question."
 
+    # 4. Balanced Option Shuffling (Eliminates Option A Bias!)
+    # Shuffles option positions randomly across A, B, C, D so correct answer isn't always A
+    import random
+    correct_text = clean_opts.get(clean_correct, clean_opts.get("A", "Option A"))
+    opt_pairs = [(k == clean_correct, text) for k, text in clean_opts.items()]
+    random.shuffle(opt_pairs)
+
+    shuffled_opts: Dict[str, str] = {}
+    new_correct = "A"
+    for o_idx, (is_corr, opt_text) in enumerate(opt_pairs[:4]):
+        key = chr(ord("A") + o_idx)
+        shuffled_opts[key] = opt_text
+        if is_corr:
+            new_correct = key
+
+    # In explanation, update any literal "Option X" text if the correct letter moved
+    if clean_correct != new_correct:
+        explanation = re.sub(rf"\bOption {clean_correct}\b", f"Option {new_correct}", explanation)
+        explanation = re.sub(rf"\bविकल्प {clean_correct}\b", f"विकल्प {new_correct}", explanation)
+
     return InternalQuestion(
         id=f"q_{idx}",
         question=q_text,
-        options=clean_opts,
-        correct_option=clean_correct,
+        options=shuffled_opts,
+        correct_option=new_correct,
         explanation=explanation,
     )
+
+
+def is_duplicate_question(new_q: InternalQuestion, existing_questions: List[InternalQuestion]) -> bool:
+    """
+    Multi-factor smart deduplication:
+      1. Exact question text comparison.
+      2. Meaningful token Jaccard similarity (>= 0.45 threshold).
+      3. Identical correct answer value collision on shared topics.
+    """
+    if not new_q or not new_q.question:
+        return True
+
+    def _tokenize(text: str) -> set:
+        cleaned = re.sub(r'[^\w\s]', ' ', text.lower())
+        words = set(cleaned.split())
+        stop_words = {
+            "what", "is", "the", "of", "in", "to", "a", "an", "and", "or", "for", "which",
+            "के", "की", "का", "को", "में", "से", "होता", "होती", "है", "हैं", "किन्हें",
+            "कहा", "जाता", "अनुसार", "होते", "कुल", "संख्या", "किन", "भावों", "समान", "किसे", "कौन"
+        }
+        return {w for w in words if w not in stop_words and len(w) > 1}
+
+    new_tokens = _tokenize(new_q.question)
+    new_ans = str(new_q.options.get(new_q.correct_option, "")).strip().lower()
+    new_ans_clean = re.sub(r'[^\w]', '', new_ans)
+
+    for ex in existing_questions:
+        if not ex or not ex.question:
+            continue
+
+        # 1. Exact string match
+        if new_q.question.strip().lower() == ex.question.strip().lower():
+            return True
+
+        ex_ans = str(ex.options.get(ex.correct_option, "")).strip().lower()
+        ex_ans_clean = re.sub(r'[^\w]', '', ex_ans)
+
+        # 2. Answer collision: Both questions have the same correct answer (e.g. "108" or "13° 20'")
+        if new_ans_clean and ex_ans_clean and len(new_ans_clean) >= 2:
+            if new_ans_clean == ex_ans_clean or (len(new_ans_clean) > 4 and new_ans_clean in ex_ans_clean):
+                ex_tokens = _tokenize(ex.question)
+                # If they share even 1 meaningful keyword and have the same answer, it's a duplicate concept
+                if len(new_tokens & ex_tokens) >= 1:
+                    return True
+
+        # 3. High word token overlap (Jaccard similarity >= 0.45)
+        ex_tokens = _tokenize(ex.question)
+        if new_tokens and ex_tokens:
+            union = new_tokens | ex_tokens
+            if union and (len(new_tokens & ex_tokens) / len(union)) >= 0.45:
+                return True
+
+    return False
 
 
 # =========================================================================
@@ -629,10 +702,14 @@ class LLMService:
                             logger.error("Full syllabus sharded worker error: %s", e_sharded)
 
                 import random
-                random.shuffle(all_generated_questions)
+                deduped: List[InternalQuestion] = []
+                for q in all_generated_questions:
+                    if not is_duplicate_question(q, deduped):
+                        deduped.append(q)
+                random.shuffle(deduped)
 
                 questions_dict: Dict[str, InternalQuestion] = {}
-                for idx, q in enumerate(all_generated_questions[:count], start=1):
+                for idx, q in enumerate(deduped[:count], start=1):
                     qid = f"q_{idx}"
                     questions_dict[qid] = InternalQuestion(
                         id=qid,
@@ -723,12 +800,10 @@ class LLMService:
                         except Exception as e:
                             logger.error("Parallel batch execution error: %s", e)
 
-            # Deduplicate by question text against bank questions
-            seen_texts = {q.question.strip().lower() for q in all_questions}
+            # Deduplicate by multi-factor similarity and answer collision against existing questions
             for q in generated:
-                if q.question.strip().lower() not in seen_texts:
+                if not is_duplicate_question(q, all_questions):
                     all_questions.append(q)
-                    seen_texts.add(q.question.strip().lower())
 
         # Double-shuffle all questions so students never receive identical question sequences
         import random
@@ -777,7 +852,7 @@ class LLMService:
                         for eq in extra_qs:
                             if len(questions_dict) >= count:
                                 break
-                            if eq.question.strip().lower() not in {q.question.strip().lower() for q in questions_dict.values()}:
+                            if not is_duplicate_question(eq, list(questions_dict.values())):
                                 qid = f"q_{len(questions_dict) + 1}"
                                 questions_dict[qid] = InternalQuestion(
                                     id=qid,
@@ -805,7 +880,7 @@ class LLMService:
                         for eq in extra_qs:
                             if len(questions_dict) >= count:
                                 break
-                            if eq.question.strip().lower() not in {q.question.strip().lower() for q in questions_dict.values()}:
+                            if not is_duplicate_question(eq, list(questions_dict.values())):
                                 qid = f"q_{len(questions_dict) + 1}"
                                 questions_dict[qid] = InternalQuestion(
                                     id=qid,
