@@ -93,7 +93,7 @@ DISTRACTOR ENGINEERING & FORMATTING RULES:
 3. The 3 wrong options (distractors) MUST reflect genuine student misconceptions and plausible errors tailored specifically to the {difficulty} tier.
 4. ABSOLUTELY FORBIDDEN: NEVER use 'All of the above', 'None of the above', or 'Both A and B'.
 5. Provide a clear, educational explanation for why the correct option is right. Keep each explanation concise (maximum 1-2 sentences).
-6. LATEX FORMATTING FOR FORMULAS: Format all mathematical formulas, scientific notations, chemical equations, angle calculations, and degree notations using standard LaTeX enclosed in single dollar signs (e.g. $E = mc^2$, $360^\\circ$, $27 \\times 4 = 108$, or $\\frac{{a}}{{b}}$). Do not use clumsy ASCII or broken unicode symbols.
+6. LATEX FORMATTING FOR FORMULAS: Format all mathematical formulas, scientific notations, chemical equations, angle calculations, and degree notations using standard LaTeX enclosed in single dollar signs (e.g. $E = mc^2$, $360^{\\circ}$, $13^{\\circ} 20'$, $27 \\times 4 = 108$, or $\\frac{{a}}{{b}}$). For degrees, ALWAYS write $^{\\circ}$ with curly braces (e.g. $15^{\\circ}$, $13^{\\circ} 20'$) or the degree symbol '°'. NEVER write bare ^circ without braces or backslash.
 7. ABSOLUTE QUESTION DIVERSITY: Every single question in the set MUST test a completely unique concept, fact, or formula. NEVER ask two questions testing the same underlying answer or property.
 8. OPTION BALANCING: Evenly distribute the correct option across 'A', 'B', 'C', and 'D'. Do NOT default to putting the correct answer in Option 'A'.
 

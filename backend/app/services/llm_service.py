@@ -26,6 +26,22 @@ from app.prompts.templates import (
 
 logger = logging.getLogger(__name__)
 
+def clean_math_text(s: str) -> str:
+    """
+    Standardizes LaTeX math formulas and fixes broken LLM notation:
+      - Converts ^circ, ^{circ}, ^\\circ into standard ^{\\circ}
+      - Adds spacing between degree and minutes (e.g. 13^{\\circ} 20')
+    """
+    if not s:
+        return s
+    import re
+    # 1. Standardize degree notation: ^circ, ^{circ}, ^\circ -> ^{\circ}
+    s = re.sub(r'\^\{?\\?circ\}?', r'^{\\circ}', s)
+    # 2. Add space after degree if followed by a number: ^{\circ}30' -> ^{\circ} 30'
+    s = re.sub(r'(\^\{\\circ\})(\d+)', r'\1 \2', s)
+    return s
+
+
 def normalize_ai_question(item: Any, idx: int) -> Optional[InternalQuestion]:
     """
     Robust normalizer that adapts any LLM response structure:
@@ -37,7 +53,7 @@ def normalize_ai_question(item: Any, idx: int) -> Optional[InternalQuestion]:
         return None
 
     import re
-    q_text = str(item.get("question") or item.get("question_text") or "").strip()
+    q_text = clean_math_text(str(item.get("question") or item.get("question_text") or "").strip())
     if not q_text:
         return None
 
@@ -47,7 +63,7 @@ def normalize_ai_question(item: Any, idx: int) -> Optional[InternalQuestion]:
     if isinstance(raw_opts, list):
         for o_idx, opt in enumerate(raw_opts[:4]):
             key = chr(ord("A") + o_idx)
-            opt_str = str(opt).strip()
+            opt_str = clean_math_text(str(opt).strip())
             # Strip leading "A) ", "A. ", "A: "
             if len(opt_str) >= 3 and opt_str[0].upper() == key and opt_str[1] in [")", ".", ":", "-"]:
                 opt_str = opt_str[2:].strip()
@@ -55,7 +71,7 @@ def normalize_ai_question(item: Any, idx: int) -> Optional[InternalQuestion]:
     elif isinstance(raw_opts, dict):
         for key in ["A", "B", "C", "D"]:
             val = raw_opts.get(key) or raw_opts.get(key.lower()) or "Option Unavailable"
-            clean_opts[key] = str(val).strip()
+            clean_opts[key] = clean_math_text(str(val).strip())
 
     # Ensure all 4 options exist
     for key in ["A", "B", "C", "D"]:
@@ -73,7 +89,7 @@ def normalize_ai_question(item: Any, idx: int) -> Optional[InternalQuestion]:
         clean_correct = m.group(0).upper() if m else "A"
 
     # 3. Normalize Explanation
-    explanation = str(item.get("explanation") or item.get("reasoning") or "").strip()
+    explanation = clean_math_text(str(item.get("explanation") or item.get("reasoning") or "").strip())
     if not explanation:
         explanation = f"Option {clean_correct} is the verified correct answer for this question."
 
