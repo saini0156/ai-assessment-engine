@@ -19,11 +19,27 @@ interface MathTextProps {
 }
 
 /**
+ * Standardize and clean LaTeX math string before sending to KaTeX
+ */
+function sanitizeLatex(math: string): string {
+  if (!math) return "";
+  return math
+    // 1. Standardize degree notation: ^circ, ^{circ}, ^\circ -> ^{\circ}
+    .replace(/\^\{?\\?circ\}?/gi, "^{\\circ}")
+    // 2. Add space after degree if followed by a number: ^{\circ}30' -> ^{\circ} 30'
+    .replace(/(\^\{\\circ\})(\d+)/g, "$1 $2")
+    // 3. Handle raw unicode degree in math mode: 15° -> 15^{\circ}
+    .replace(/°/g, "^{\\circ}");
+}
+
+/**
  * Clean fallback renderer if KaTeX is not yet loaded
  */
 function cleanLatexFallback(math: string): string {
   return math
     .replace(/\\circ/g, "°")
+    .replace(/\^\{?\\?circ\}?/gi, "°")
+    .replace(/°/g, "°")
     .replace(/\\times/g, "×")
     .replace(/\\pm/g, "±")
     .replace(/\\div/g, "÷")
@@ -59,8 +75,14 @@ export function MathText({ text, className = "" }: MathTextProps) {
 
   if (!text) return null;
 
+  // Auto-wrap naked degree/angle expressions (e.g. 15^circ or 13^circ20') that missed $ delimiters
+  const preparedText = text.replace(
+    /(^|\s)([\d\.\+\-\*\/]+\s*\^\{?\\?circ\}?(?:\s*\d+['"]?)?)(?=\s|$|[,\.?!])/gi,
+    (match, prefix, expr) => `${prefix}$${expr}$`
+  );
+
   // Split by LaTeX delimiters ($$ ... $$ for block, $ ... $ for inline)
-  const tokens = text.split(/(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/g);
+  const tokens = preparedText.split(/(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/g);
 
   return (
     <span className={className}>
@@ -72,10 +94,11 @@ export function MathText({ text, className = "" }: MathTextProps) {
 
         if (isBlock || isInline) {
           const rawMath = isBlock ? token.slice(2, -2).trim() : token.slice(1, -1).trim();
+          const cleanMath = sanitizeLatex(rawMath);
 
           if (katexLoaded && typeof window !== "undefined" && window.katex) {
             try {
-              const html = window.katex.renderToString(rawMath, {
+              const html = window.katex.renderToString(cleanMath, {
                 displayMode: isBlock,
                 throwOnError: false,
               });
@@ -97,7 +120,7 @@ export function MathText({ text, className = "" }: MathTextProps) {
               key={i}
               className={isBlock ? "my-2 block text-center font-mono font-medium" : "inline-block px-0.5 font-mono font-medium"}
             >
-              {cleanLatexFallback(rawMath)}
+              {cleanLatexFallback(cleanMath)}
             </span>
           );
         }
