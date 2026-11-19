@@ -84,10 +84,9 @@ export interface TutorExplainResponse {
   real_world_example: string;
 }
 
-
 // 5. Authentication
 
-export type UserRole = "admin" | "user";
+export type UserRole = "admin" | "student";
 
 export interface AuthUser {
   id: string;

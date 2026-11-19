@@ -1,10 +1,17 @@
+
 import type { Metadata, Viewport } from "next";
-import { Playfair_Display } from "next/font/google";
-import Script from "next/script";
+import { Playfair_Display, Noto_Sans_Devanagari } from "next/font/google";
 import "./globals.css";
+
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { HideOnAdmin, PageMain } from "@/components/admin/AdminAware";
+
+const hindiFont = Noto_Sans_Devanagari({
+  subsets: ["devanagari", "latin"],
+  display: "swap",
+  variable: "--font-hindi",
+});
 
 const serif = Playfair_Display({
   subsets: ["latin"],
@@ -14,7 +21,8 @@ const serif = Playfair_Display({
 
 export const metadata: Metadata = {
   title: "MindMark | Syllabus to Practice Quizzes",
-  description: "Turn a syllabus into practice quizzes with instant, plain-language explanations.",
+  description:
+    "Turn a syllabus into practice quizzes with instant, plain-language explanations.",
 };
 
 export const viewport: Viewport = {
@@ -29,19 +37,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={serif.variable}>
-      <head>
-        <link
-          rel="stylesheet"
-          href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
-          crossOrigin="anonymous"
-        />
-      </head>
-      <body className="flex min-h-screen flex-col overflow-x-clip bg-[#fdfaf6] text-stone-900 antialiased">
-        <Script
-          src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"
-          strategy="lazyOnload"
-        />
+    <html lang="en" className={`${serif.variable} ${hindiFont.variable}`}>
+      <body
+        className={`${hindiFont.className} flex min-h-screen flex-col overflow-x-clip bg-[#fdfaf6] text-stone-900 antialiased`}
+      >
         <HideOnAdmin>
           <Navbar />
         </HideOnAdmin>

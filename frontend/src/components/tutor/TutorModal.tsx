@@ -207,7 +207,7 @@ export function TutorModal({
           <Bubble>
             <p className="font-semibold text-stone-900">Hi! Let&apos;s look at the one you missed.</p>
             <p className="mt-2 rounded-lg bg-white px-3 py-2 text-stone-700 ring-1 ring-stone-200">
-              {question}
+              <MathText text={question} />
             </p>
             <p className="mt-2 text-xs">
               You chose{" "}

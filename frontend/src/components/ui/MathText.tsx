@@ -1,132 +1,282 @@
+
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 declare global {
   interface Window {
     katex?: {
       renderToString: (
         tex: string,
-        options?: { displayMode?: boolean; throwOnError?: boolean }
+        options?: {
+          displayMode?: boolean;
+          throwOnError?: boolean;
+          strict?: boolean | "ignore" | "warn" | "error";
+        }
       ) => string;
     };
   }
 }
+
+const KATEX_CSS =
+  "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css";
+
+const KATEX_JS =
+  "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js";
+
+let katexPromise: Promise<void> | null = null;
+
+/* Load KaTeX once */
+function loadKatex(): Promise<void> {
+  if (typeof window === "undefined") {
+    return Promise.reject(new Error("Browser environment required"));
+  }
+
+  if (window.katex) return Promise.resolve();
+
+  if (katexPromise) return katexPromise;
+
+  katexPromise = new Promise<void>((resolve, reject) => {
+    let script = document.querySelector<HTMLScriptElement>(
+      'script[data-katex="true"]'
+    );
+
+    let link = document.querySelector<HTMLLinkElement>(
+      'link[data-katex="true"]'
+    );
+
+    let scriptDone = !!window.katex;
+    let cssDone = !!link?.sheet;
+
+    const checkComplete = () => {
+      if (scriptDone && cssDone) resolve();
+    };
+
+    const handleScriptLoad = () => {
+      scriptDone = true;
+      checkComplete();
+    };
+
+    const handleCSSLoad = () => {
+      cssDone = true;
+      checkComplete();
+    };
+
+    if (!cssDone) {
+      if (!link) {
+        link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = KATEX_CSS;
+        link.crossOrigin = "anonymous";
+        link.dataset.katex = "true";
+      }
+
+      link.addEventListener("load", handleCSSLoad, { once: true });
+      link.addEventListener(
+        "error",
+        () => reject(new Error("KaTeX CSS failed to load")),
+        { once: true }
+      );
+
+      if (!link.isConnected) {
+        document.head.appendChild(link);
+      }
+    }
+
+    if (!scriptDone) {
+      if (!script) {
+        script = document.createElement("script");
+        script.src = KATEX_JS;
+        script.async = true;
+        script.crossOrigin = "anonymous";
+        script.dataset.katex = "true";
+      }
+
+      script.addEventListener("load", handleScriptLoad, {
+        once: true,
+      });
+
+      script.addEventListener(
+        "error",
+        () => reject(new Error("KaTeX JavaScript failed to load")),
+        { once: true }
+      );
+
+      if (!script.isConnected) {
+        document.head.appendChild(script);
+      }
+    }
+
+    checkComplete();
+  }).catch((error) => {
+    katexPromise = null;
+    throw error;
+  });
+
+  return katexPromise;
+}
+
+/* Standardize degree notation */
+function sanitizeLatex(math: string): string {
+  return math
+    .replace(/\^\{?\\circ\}?/gi, "^{\\circ}")
+    .replace(/°/g, "^{\\circ}");
+}
+
+/* Readable fallback if KaTeX is unavailable */
+function cleanLatexFallback(math: string): string {
+  return math
+    .replace(/\^\{\\circ\}/g, "°")
+    .replace(/\\circ\b/g, "°")
+    .replace(/\\times\b/g, "×")
+    .replace(/\\pm\b/g, "±")
+    .replace(/\\div\b/g, "÷")
+    .replace(/\\leq?\b/g, "≤")
+    .replace(/\\geq?\b/g, "≥")
+    .replace(/\\neq\b/g, "≠")
+    .replace(/\\approx\b/g, "≈")
+    .replace(/\\alpha\b/g, "α")
+    .replace(/\\beta\b/g, "β")
+    .replace(/\\theta\b/g, "θ")
+    .replace(/\\pi\b/g, "π")
+    .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, "($1 / $2)")
+    .replace(/[{}]/g, "")
+    .trim();
+}
+
+/* Convert naked degree expressions into inline math */
+function prepareMathText(text: string): string {
+  return text.replace(
+    /(^|\s)(\d+(?:\.\d+)?\s*\^\\?circ(?:\s*\d+['"]?)?)(?=\s|$|[,.?!])/gi,
+    (_match, prefix: string, expression: string) =>
+      `${prefix}$${expression}$`
+  );
+}
+
+/* Detect inline and block mathematical expressions */
+const MATH_SPLIT =
+  /(\$\$[\s\S]+?\$\$|\$(?!\s)[^$\n]+?\$(?!\d))/g;
+
+const NEEDS_MATH =
+  /\$\$[\s\S]+?\$\$|\$(?!\s)[^$\n]+?\$(?!\d)|\d+\s*\^\\?circ/i;
 
 interface MathTextProps {
   text: string;
   className?: string;
 }
 
-/**
- * Standardize and clean LaTeX math string before sending to KaTeX
- */
-function sanitizeLatex(math: string): string {
-  if (!math) return "";
-  return math
-    // 1. Standardize degree notation: ^circ, ^{circ}, ^\circ -> ^{\circ}
-    .replace(/\^\{?\\?circ\}?/gi, "^{\\circ}")
-    // 2. Add space after degree if followed by a number: ^{\circ}30' -> ^{\circ} 30'
-    .replace(/(\^\{\\circ\})(\d+)/g, "$1 $2")
-    // 3. Handle raw unicode degree in math mode: 15° -> 15^{\circ}
-    .replace(/°/g, "^{\\circ}");
-}
+export function MathText({
+  text,
+  className = "",
+}: MathTextProps) {
+  const [ready, setReady] = useState(false);
 
-/**
- * Clean fallback renderer if KaTeX is not yet loaded
- */
-function cleanLatexFallback(math: string): string {
-  return math
-    .replace(/\\circ/g, "°")
-    .replace(/\^\{?\\?circ\}?/gi, "°")
-    .replace(/°/g, "°")
-    .replace(/\\times/g, "×")
-    .replace(/\\pm/g, "±")
-    .replace(/\\div/g, "÷")
-    .replace(/\\le(q)?/g, "≤")
-    .replace(/\\ge(q)?/g, "≥")
-    .replace(/\\ne(q)?/g, "≠")
-    .replace(/\\approx/g, "≈")
-    .replace(/\\alpha/g, "α")
-    .replace(/\\beta/g, "β")
-    .replace(/\\theta/g, "θ")
-    .replace(/\\pi/g, "π")
-    .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, "($1 / $2)")
-    .replace(/[\{\}]/g, "")
-    .trim();
-}
-
-export function MathText({ text, className = "" }: MathTextProps) {
-  const [katexLoaded, setKatexLoaded] = useState(false);
-
+  /* Load KaTeX only when mathematical text exists */
   useEffect(() => {
-    if (typeof window !== "undefined" && window.katex) {
-      setKatexLoaded(true);
+    if (!text || !NEEDS_MATH.test(text)) {
+      setReady(false);
       return;
     }
-    const interval = setInterval(() => {
-      if (typeof window !== "undefined" && window.katex) {
-        setKatexLoaded(true);
-        clearInterval(interval);
+
+    let cancelled = false;
+
+    loadKatex()
+      .then(() => {
+        if (!cancelled) setReady(true);
+      })
+      .catch((error) => {
+        console.error("KaTeX loading failed:", error);
+
+        if (!cancelled) setReady(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [text]);
+
+  const content = useMemo(() => {
+    if (!text) return null;
+
+    const prepared = prepareMathText(text);
+
+    return prepared.split(MATH_SPLIT).map((token, index) => {
+      if (!token) return null;
+
+      const isBlock =
+        token.startsWith("$$") && token.endsWith("$$");
+
+      const isInline =
+        !isBlock &&
+        token.startsWith("$") &&
+        token.endsWith("$");
+
+      if (!isBlock && !isInline) {
+        return (
+          <React.Fragment key={index}>
+            {token}
+          </React.Fragment>
+        );
       }
-    }, 200);
-    return () => clearInterval(interval);
-  }, []);
+
+      const raw = isBlock
+        ? token.slice(2, -2)
+        : token.slice(1, -1);
+
+      if (!raw.trim()) {
+        return (
+          <React.Fragment key={index}>
+            {token}
+          </React.Fragment>
+        );
+      }
+
+      const math = sanitizeLatex(raw.trim());
+
+      if (ready && window.katex) {
+        try {
+          const html = window.katex.renderToString(math, {
+            displayMode: isBlock,
+            throwOnError: false,
+            strict: "ignore",
+          });
+
+          return (
+            <span
+              key={index}
+              className={
+                isBlock
+                  ? "my-3 block max-w-full overflow-x-auto text-center"
+                  : "inline-block px-0.5 align-middle"
+              }
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          );
+        } catch (error) {
+          console.error("KaTeX rendering failed:", error);
+        }
+      }
+
+      return (
+        <span
+          key={index}
+          className={
+            isBlock
+              ? "my-3 block max-w-full overflow-x-auto text-center font-mono"
+              : "inline-block px-0.5 font-mono"
+          }
+        >
+          {cleanLatexFallback(math)}
+        </span>
+      );
+    });
+  }, [text, ready]);
 
   if (!text) return null;
 
-  // Auto-wrap naked degree/angle expressions (e.g. 15^circ or 13^circ20') that missed $ delimiters
-  const preparedText = text.replace(
-    /(^|\s)([\d\.\+\-\*\/]+\s*\^\{?\\?circ\}?(?:\s*\d+['"]?)?)(?=\s|$|[,\.?!])/gi,
-    (match, prefix, expr) => `${prefix}$${expr}$`
-  );
-
-  // Split by LaTeX delimiters ($$ ... $$ for block, $ ... $ for inline)
-  const tokens = preparedText.split(/(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/g);
-
   return (
-    <span className={className}>
-      {tokens.map((token, i) => {
-        if (!token) return null;
-
-        const isBlock = token.startsWith("$$") && token.endsWith("$$");
-        const isInline = !isBlock && token.startsWith("$") && token.endsWith("$");
-
-        if (isBlock || isInline) {
-          const rawMath = isBlock ? token.slice(2, -2).trim() : token.slice(1, -1).trim();
-          const cleanMath = sanitizeLatex(rawMath);
-
-          if (katexLoaded && typeof window !== "undefined" && window.katex) {
-            try {
-              const html = window.katex.renderToString(cleanMath, {
-                displayMode: isBlock,
-                throwOnError: false,
-              });
-              return (
-                <span
-                  key={i}
-                  className={isBlock ? "my-2 block overflow-x-auto text-center" : "inline-block px-0.5"}
-                  dangerouslySetInnerHTML={{ __html: html }}
-                />
-              );
-            } catch {
-              // Fallback on KaTeX parse error
-            }
-          }
-
-          // Graceful fallback while KaTeX script loads
-          return (
-            <span
-              key={i}
-              className={isBlock ? "my-2 block text-center font-mono font-medium" : "inline-block px-0.5 font-mono font-medium"}
-            >
-              {cleanLatexFallback(cleanMath)}
-            </span>
-          );
-        }
-
-        return <React.Fragment key={i}>{token}</React.Fragment>;
-      })}
+    <span className={`${className} whitespace-normal`}>
+      {content}
     </span>
   );
 }
