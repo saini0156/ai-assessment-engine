@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiClient } from "@/lib/api";
+import { getSession } from "@/lib/session";
 import {
   ArrowLeft,
   BookOpen,
@@ -14,6 +15,8 @@ import {
   Layers,
   Loader2,
   Sparkles,
+  LockKeyhole,
+  X,
 } from "lucide-react";
 
 const COUNTS = [3, 5, 10];
@@ -221,9 +224,7 @@ function Dropdown({
             >
               <span className="truncate">{opt}</span>
 
-              {opt === value && (
-                <Check className="h-4 w-4 shrink-0" />
-              )}
+              {opt === value && <Check className="h-4 w-4 shrink-0" />}
             </li>
           ))}
         </ul>
@@ -245,6 +246,9 @@ function QuizConfigForm() {
   const [mode, setMode] = useState<QuizMode>("hybrid");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Login popup state
+  const [showLoginModal, setShowLoginModal] = useState(false);
 
   const initialParams = useRef({
     subject: searchParams.get("subject"),
@@ -299,8 +303,16 @@ function QuizConfigForm() {
     setTopic(entries.find((e) => e.name === name)?.topics[0] ?? "");
   };
 
+  // Generate quiz only after checking login
   const handleStartQuiz = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const session = getSession();
+
+    if (!session?.access_token) {
+      setShowLoginModal(true);
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -343,12 +355,16 @@ function QuizConfigForm() {
         <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/70 lg:bg-gradient-to-r lg:from-black/65 lg:via-black/25 lg:to-black/10" />
 
         <div className="relative z-10 flex h-full flex-col justify-between gap-6 px-5 pb-10 pt-5 sm:p-10 lg:p-14">
-          <Link href="/" className="inline-flex items-center self-start">
+          <Link
+            href="/"
+            aria-label="MindMark home"
+            className="inline-flex items-center self-start"
+          >
             <Image
               src="/images/logowhite.png"
               alt="MindMark"
-              width={200}
-              height={48}
+              width={410}
+              height={200}
               className="h-8 w-auto sm:h-24"
               priority
             />
@@ -482,16 +498,6 @@ function QuizConfigForm() {
             </div>
           </div>
 
-          {/* Error */}
-          {error && (
-            <div
-              role="alert"
-              className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-            >
-              {error}
-            </div>
-          )}
-
           {/* Question Source */}
           <div>
             <span className="block text-sm font-bold text-black">
@@ -516,6 +522,16 @@ function QuizConfigForm() {
               {MODES.find((m) => m.id === mode)?.hint}
             </p>
           </div>
+
+          {/* Error */}
+          {error && (
+            <div
+              role="alert"
+              className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+            >
+              {error}
+            </div>
+          )}
 
           {/* Generate Quiz */}
           <button
@@ -548,6 +564,74 @@ function QuizConfigForm() {
           </div>
         </form>
       </div>
+
+      {/* LOGIN REQUIRED MODAL */}
+      {showLoginModal && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowLoginModal(false);
+            }
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="login-modal-title"
+            className="relative w-full max-w-md rounded-2xl bg-white p-7 text-center shadow-2xl sm:p-9"
+          >
+            {/* Close button */}
+            <button
+              type="button"
+              onClick={() => setShowLoginModal(false)}
+              aria-label="Close popup"
+              className="absolute right-4 top-4 rounded-full p-2 text-stone-400 transition hover:bg-stone-100 hover:text-stone-900"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            {/* Icon */}
+            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-amber-50">
+              <LockKeyhole className="h-7 w-7 text-amber-600" />
+            </div>
+
+            {/* Heading */}
+            <h2
+              id="login-modal-title"
+              className="text-2xl font-extrabold tracking-tight text-stone-900"
+            >
+              Login Required
+            </h2>
+
+            {/* Description */}
+            <p className="mt-3 text-sm leading-relaxed text-stone-600">
+              Please log in to your MindMark account before generating your
+              quiz. Your quiz attempts and results will be saved to your
+              account.
+            </p>
+
+            {/* Login button */}
+            <button
+              type="button"
+              onClick={() => router.push("/login?redirect=/quiz/new")}
+              className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-black px-5 py-3.5 text-sm font-bold text-white transition hover:bg-stone-800"
+            >
+              <LockKeyhole className="h-4 w-4" />
+              Go to Login
+            </button>
+
+            {/* Cancel button */}
+            <button
+              type="button"
+              onClick={() => setShowLoginModal(false)}
+              className="mt-3 w-full rounded-xl border border-stone-200 px-5 py-3 text-sm font-semibold text-stone-600 transition hover:bg-stone-50"
+            >
+              Maybe Later
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

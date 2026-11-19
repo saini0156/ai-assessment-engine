@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useCallback, useEffect, useRef, useState, use } from "react";
@@ -13,11 +14,12 @@ import {
   Flag,
   GraduationCap,
   Loader2,
+  MessageSquare,
   Timer,
   X,
 } from "lucide-react";
 
-const TOTAL_SECONDS = 300; // 5 minutes
+const TOTAL_SECONDS = 300;
 
 const LEGEND = [
   { label: "Current", dot: "bg-black" },
@@ -25,6 +27,8 @@ const LEGEND = [
   { label: "Marked for review", dot: "bg-amber-400" },
   { label: "Not answered", dot: "border border-stone-400 bg-white" },
 ];
+
+type FeedbackStatus = "success" | "error";
 
 export default function QuizPlayerPage({
   params,
@@ -44,17 +48,28 @@ export default function QuizPlayerPage({
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Always holds the latest answers, so auto-submit never sends stale data
+  // Per-question feedback state
+  const [feedbackDrafts, setFeedbackDrafts] = useState<
+    Record<string, string>
+  >({});
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState<
+    Record<string, boolean>
+  >({});
+  const [feedbackStatus, setFeedbackStatus] = useState<
+    Record<string, FeedbackStatus | undefined>
+  >({});
+
   const answersRef = useRef<Record<string, string>>({});
   const submittingRef = useRef(false);
 
   // Load quiz from sessionStorage
   useEffect(() => {
     const raw = sessionStorage.getItem(`quiz_${quizId}`);
+
     if (raw) {
       try {
         setQuizData(JSON.parse(raw));
-      } catch (e) {
+      } catch {
         setError("Failed to parse quiz session data.");
       }
     } else {
@@ -64,8 +79,56 @@ export default function QuizPlayerPage({
     }
   }, [quizId]);
 
+  // Submit feedback for the current question
+const handleSubmitFeedback = async (questionId: string) => {
+  const reviewText = (feedbackDrafts[questionId] ?? "").trim();
+
+  if (!reviewText) return;
+
+  setFeedbackSubmitting((prev) => ({
+    ...prev,
+    [questionId]: true,
+  }));
+
+  setFeedbackStatus((prev) => ({
+    ...prev,
+    [questionId]: undefined,
+  }));
+
+  try {
+    await apiClient.submitQuestionFeedback(
+      quizId,
+      questionId,
+      reviewText
+    );
+
+    setFeedbackDrafts((prev) => ({
+      ...prev,
+      [questionId]: "",
+    }));
+
+    setFeedbackStatus((prev) => ({
+      ...prev,
+      [questionId]: "success",
+    }));
+  } catch (error) {
+    console.error("Feedback submission error:", error);
+
+    setFeedbackStatus((prev) => ({
+      ...prev,
+      [questionId]: "error",
+    }));
+  } finally {
+    setFeedbackSubmitting((prev) => ({
+      ...prev,
+      [questionId]: false,
+    }));
+  }
+};
+
   const handleSubmitQuiz = useCallback(async () => {
     if (!quizData || submittingRef.current) return;
+
     submittingRef.current = true;
     setSubmitting(true);
     setShowConfirmModal(false);
@@ -76,7 +139,6 @@ export default function QuizPlayerPage({
         answers: answersRef.current,
       });
 
-      // Save results in sessionStorage
       sessionStorage.setItem(`results_${quizId}`, JSON.stringify(response));
       router.push(`/quiz/${quizId}/results`);
     } catch (err: any) {
@@ -86,53 +148,81 @@ export default function QuizPlayerPage({
     }
   }, [quizData, quizId, router]);
 
-  // Timer: one steady interval, started once the quiz is loaded
+  // Timer
   useEffect(() => {
     if (!quizData) return;
+
     const id = setInterval(() => {
       setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
     }, 1000);
+
     return () => clearInterval(id);
   }, [quizData]);
 
   // Auto-submit when time runs out
   useEffect(() => {
-    if (quizData && timeLeft === 0) handleSubmitQuiz();
+    if (quizData && timeLeft === 0) {
+      handleSubmitQuiz();
+    }
   }, [quizData, timeLeft, handleSubmitQuiz]);
 
   const setAnswer = (questionId: string, optionKey: string | null) => {
     const next = { ...answersRef.current };
-    if (optionKey === null) delete next[questionId];
-    else next[questionId] = optionKey;
+
+    if (optionKey === null) {
+      delete next[questionId];
+    } else {
+      next[questionId] = optionKey;
+    }
+
     answersRef.current = next;
     setAnswers(next);
   };
 
   const toggleFlag = (questionId: string) => {
-    setFlagged((prev) => ({ ...prev, [questionId]: !prev[questionId] }));
+    setFlagged((prev) => ({
+      ...prev,
+      [questionId]: !prev[questionId],
+    }));
   };
 
-  // Keyboard shortcuts: A-D to answer, arrows to move, Esc closes the dialog
+  // Keyboard shortcuts
   useEffect(() => {
     if (!quizData) return;
 
     const onKey = (e: KeyboardEvent) => {
       if (submitting) return;
+
       if (e.key === "Escape") {
         setShowConfirmModal(false);
         return;
       }
+
       if (showConfirmModal) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
+      // Don't capture keyboard shortcuts while typing feedback
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "INPUT"
+      ) {
+        return;
+      }
+
       if (e.key === "ArrowRight") {
-        setCurrentIndex((i) => Math.min(quizData.total_questions - 1, i + 1));
+        setCurrentIndex((i) =>
+          Math.min(quizData.total_questions - 1, i + 1),
+        );
       } else if (e.key === "ArrowLeft") {
         setCurrentIndex((i) => Math.max(0, i - 1));
       } else {
         const key = e.key.toUpperCase();
         const q = quizData.questions[currentIndex];
-        if (q && key in q.options) setAnswer(q.id, key);
+
+        if (q && key in q.options) {
+          setAnswer(q.id, key);
+        }
       }
     };
 
@@ -183,9 +273,11 @@ export default function QuizPlayerPage({
   const total = quizData.total_questions;
   const answeredCount = Object.keys(answers).length;
   const flaggedCount = Object.values(flagged).filter(Boolean).length;
+
   const unansweredNumbers = quizData.questions
     .map((q, i) => (answers[q.id] ? null : i + 1))
     .filter((n): n is number => n !== null);
+
   const isFlagged = !!flagged[currentQ.id];
 
   const timerStyle =
@@ -197,9 +289,11 @@ export default function QuizPlayerPage({
 
   const paletteClass = (idx: number, q: PublicQuestion) => {
     if (idx === currentIndex) return "border-black bg-black text-white";
-    if (flagged[q.id]) return "border-amber-400 bg-amber-100 text-amber-800";
+    if (flagged[q.id])
+      return "border-amber-400 bg-amber-100 text-amber-800";
     if (answers[q.id])
       return "border-emerald-300 bg-emerald-100 text-emerald-800";
+
     return "border-stone-300 bg-white text-stone-600 hover:border-stone-500";
   };
 
@@ -215,7 +309,9 @@ export default function QuizPlayerPage({
                 MindMark
               </span>
             </div>
+
             <span className="hidden h-6 w-px bg-stone-200 sm:block" />
+
             <div className="min-w-0 leading-tight">
               <p className="truncate text-sm font-bold text-stone-900">
                 {quizData.subject}
@@ -248,7 +344,6 @@ export default function QuizPlayerPage({
           </div>
         </div>
 
-        {/* Progress bar: answered / total */}
         <div className="h-1 w-full bg-stone-100">
           <div
             className="h-full bg-black transition-all duration-500"
@@ -259,7 +354,7 @@ export default function QuizPlayerPage({
 
       {/* ---------------------------- Body ---------------------------- */}
       <div className="flex min-h-0 flex-1">
-        {/* Left sidebar: question palette + legend (desktop) */}
+        {/* Left sidebar */}
         <aside className="hidden w-72 shrink-0 flex-col gap-6 overflow-y-auto border-r border-stone-200 bg-white p-6 lg:flex">
           <div>
             <div className="flex items-baseline justify-between">
@@ -278,10 +373,7 @@ export default function QuizPlayerPage({
                   onClick={() => setCurrentIndex(idx)}
                   aria-label={`Go to question ${idx + 1}`}
                   aria-current={idx === currentIndex ? "step" : undefined}
-                  className={`flex aspect-square items-center justify-center rounded-md border text-sm font-bold transition ${paletteClass(
-                    idx,
-                    q,
-                  )}`}
+                  className={`flex aspect-square items-center justify-center rounded-md border text-sm font-bold transition ${paletteClass(idx, q)}`}
                 >
                   {idx + 1}
                 </button>
@@ -304,9 +396,9 @@ export default function QuizPlayerPage({
           </p>
         </aside>
 
-        {/* Main: question */}
+        {/* Main question area */}
         <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:gap-3 sm:p-5 sm:pb-5">
-          {/* Compact palette for small screens */}
+          {/* Compact palette for mobile */}
           <div className="flex shrink-0 gap-2 overflow-x-auto px-0.5 py-0.5 lg:hidden">
             {quizData.questions.map((q, idx) => (
               <button
@@ -314,10 +406,7 @@ export default function QuizPlayerPage({
                 onClick={() => setCurrentIndex(idx)}
                 aria-label={`Go to question ${idx + 1}`}
                 aria-current={idx === currentIndex ? "step" : undefined}
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border text-sm font-bold transition ${paletteClass(
-                  idx,
-                  q,
-                )}`}
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border text-sm font-bold transition ${paletteClass(idx, q)}`}
               >
                 {idx + 1}
               </button>
@@ -325,11 +414,12 @@ export default function QuizPlayerPage({
           </div>
 
           <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col rounded-2xl border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
-            {/* Header row */}
+            {/* Question header */}
             <div className="flex shrink-0 items-center justify-between gap-3">
               <p className="text-xs font-bold uppercase tracking-widest text-stone-500">
                 Question {currentIndex + 1} of {total}
               </p>
+
               <button
                 onClick={() => toggleFlag(currentQ.id)}
                 aria-pressed={isFlagged}
@@ -349,15 +439,17 @@ export default function QuizPlayerPage({
               </button>
             </div>
 
-            {/* Question + options (scrolls inside only if very long) */}
+            {/* Question + options + feedback */}
             <div className="mt-3 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
-              <h3 className="text-lg font-bold leading-snug text-stone-900 sm:text-xl lg:text-2xl">
+              <h3 className="quiz-question-text text-lg font-bold text-stone-900 sm:text-xl lg:text-2xl">
                 <MathText text={currentQ.question} />
               </h3>
 
+              {/* Options */}
               <div className="mt-3 space-y-2 sm:mt-4 sm:space-y-2.5">
                 {Object.entries(currentQ.options).map(([key, label]) => {
                   const isSelected = answers[currentQ.id] === key;
+
                   return (
                     <button
                       key={key}
@@ -378,7 +470,8 @@ export default function QuizPlayerPage({
                       >
                         {key}
                       </span>
-                      <span className="text-[15px] font-medium text-stone-900 sm:text-base">
+
+                      <span className="quiz-option-text text-[15px] font-medium text-stone-900 sm:text-base">
                         <MathText text={label} />
                       </span>
                     </button>
@@ -394,12 +487,92 @@ export default function QuizPlayerPage({
                   Clear my answer
                 </button>
               )}
+
+              {/* Per-question feedback */}
+              <div className="mt-5 border-t border-stone-100 pt-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4 text-stone-500" />
+                  <label
+                    htmlFor={`feedback-${currentQ.id}`}
+                    className="text-sm font-semibold text-stone-800"
+                  >
+                    Your feedback about this question
+                  </label>
+                </div>
+
+                <textarea
+                  id={`feedback-${currentQ.id}`}
+                  value={feedbackDrafts[currentQ.id] || ""}
+                  onChange={(e) => {
+                    const value = e.target.value;
+
+                    setFeedbackDrafts((prev) => ({
+                      ...prev,
+                      [currentQ.id]: value,
+                    }));
+
+                    // Clear an old error when the user edits the comment
+                    setFeedbackStatus((prev) => ({
+                      ...prev,
+                      [currentQ.id]: undefined,
+                    }));
+                  }}
+                  placeholder="e.g. Wording is unclear, option C seems wrong..."
+                  rows={2}
+                  maxLength={1000}
+                  disabled={feedbackSubmitting[currentQ.id]}
+                  className="w-full resize-y rounded-lg border border-stone-200 bg-stone-50 px-3 py-2.5 text-sm text-stone-800 outline-none transition placeholder:text-stone-400 focus:border-stone-500 focus:bg-white focus:ring-1 focus:ring-stone-300 disabled:opacity-60"
+                />
+
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs text-stone-400">
+                    {(feedbackDrafts[currentQ.id] || "").length}/1000
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSubmitFeedback(currentQ.id)}
+                    disabled={
+                      !feedbackDrafts[currentQ.id]?.trim() ||
+                      !!feedbackSubmitting[currentQ.id]
+                    }
+                    className="inline-flex items-center justify-center gap-2 rounded-md bg-stone-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {feedbackSubmitting[currentQ.id] ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Sending...
+                      </>
+                    ) : (
+                      "Send feedback"
+                    )}
+                  </button>
+                </div>
+
+                {feedbackStatus[currentQ.id] === "success" && (
+                  <p
+                    role="status"
+                    className="mt-2 text-xs font-medium text-emerald-700"
+                  >
+                    <CheckCircle className="mr-1 inline h-3.5 w-3.5" />
+                    Thanks for your feedback!
+                  </p>
+                )}
+
+                {feedbackStatus[currentQ.id] === "error" && (
+                  <p role="alert" className="mt-2 text-xs font-medium text-red-600">
+                    Failed to submit feedback. Please try again.
+                  </p>
+                )}
+              </div>
             </div>
 
-            {/* Navigation (always visible) */}
+            {/* Navigation */}
             <div className="mt-3 flex shrink-0 items-center justify-between gap-3 border-t border-stone-100 pt-3 sm:mt-4 sm:pt-4">
               <button
-                onClick={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
+                onClick={() =>
+                  setCurrentIndex((prev) => Math.max(0, prev - 1))
+                }
                 disabled={currentIndex === 0}
                 className="inline-flex items-center gap-2 rounded-md border border-stone-300 px-4 py-2.5 text-sm font-semibold text-stone-800 transition hover:bg-stone-50 active:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-40 sm:px-5"
               >
@@ -410,7 +583,9 @@ export default function QuizPlayerPage({
 
               {currentIndex < total - 1 ? (
                 <button
-                  onClick={() => setCurrentIndex((prev) => prev + 1)}
+                  onClick={() =>
+                    setCurrentIndex((prev) => prev + 1)
+                  }
                   className="inline-flex items-center gap-2 rounded-md bg-black px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-800 active:bg-stone-700 sm:px-6"
                 >
                   Next
@@ -423,7 +598,9 @@ export default function QuizPlayerPage({
                 >
                   <CheckCircle className="h-4 w-4" />
                   <span className="sm:hidden">Submit</span>
-                  <span className="hidden sm:inline">Submit Assessment</span>
+                  <span className="hidden sm:inline">
+                    Submit Assessment
+                  </span>
                 </button>
               )}
             </div>
@@ -447,6 +624,7 @@ export default function QuizPlayerPage({
               >
                 Submit assessment?
               </h3>
+
               <button
                 onClick={() => setShowConfirmModal(false)}
                 aria-label="Close"
@@ -463,12 +641,14 @@ export default function QuizPlayerPage({
                 </p>
                 <p className="text-xs text-stone-600">Answered</p>
               </div>
+
               <div className="rounded-xl bg-stone-100 px-2 py-3 sm:px-3">
                 <p className="text-2xl font-extrabold text-stone-800">
                   {total - answeredCount}
                 </p>
                 <p className="text-xs text-stone-600">Not answered</p>
               </div>
+
               <div className="rounded-xl bg-amber-50 px-2 py-3 sm:px-3">
                 <p className="text-2xl font-extrabold text-amber-700">
                   {flaggedCount}
@@ -495,6 +675,7 @@ export default function QuizPlayerPage({
               >
                 Continue Quiz
               </button>
+
               <button
                 onClick={handleSubmitQuiz}
                 disabled={submitting}
@@ -514,7 +695,7 @@ export default function QuizPlayerPage({
         </div>
       )}
 
-      {/* Shown when time runs out and the quiz is being graded */}
+      {/* Grading overlay */}
       {submitting && !showConfirmModal && (
         <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm">
           <Loader2 className="h-8 w-8 animate-spin text-black" />

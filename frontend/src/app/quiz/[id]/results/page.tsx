@@ -147,12 +147,12 @@ export default function QuizResultsPage({ params }: { params: Promise<{ id: stri
           </div>
 
           {/* AI feedback */}
-          <div className="rounded-2xl border border-stone-200 bg-stone-100/70 p-5 text-sm leading-relaxed text-stone-700">
+          <div className="min-w-0 rounded-2xl border border-stone-200 bg-stone-100/70 p-5 text-sm leading-relaxed text-stone-700">
             <p className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-stone-500">
               <Sparkles className="h-3.5 w-3.5" />
               AI evaluation
             </p>
-            {results.ai_feedback}
+            <MathText text={results.ai_feedback} />
           </div>
 
           {/* Actions (desktop) */}
@@ -192,9 +192,8 @@ export default function QuizResultsPage({ params }: { params: Promise<{ id: stri
                   key={f}
                   onClick={() => setFilter(f)}
                   aria-pressed={filter === f}
-                  className={`rounded px-4 py-1.5 transition ${
-                    filter === f ? "bg-black text-white" : "text-stone-600 hover:text-black"
-                  }`}
+                  className={`rounded px-4 py-1.5 transition ${filter === f ? "bg-black text-white" : "text-stone-600 hover:text-black"
+                    }`}
                 >
                   {f === "all" ? `All (${results.total_questions})` : `Missed (${missed})`}
                 </button>
@@ -211,9 +210,8 @@ export default function QuizResultsPage({ params }: { params: Promise<{ id: stri
           {visibleReviews.map(({ rev, idx }) => (
             <article
               key={rev.question_id}
-              className={`rounded-2xl border bg-white p-4 shadow-sm sm:p-6 ${
-                rev.is_correct ? "border-stone-200" : "border-red-200"
-              }`}
+              className={`rounded-2xl border bg-white p-4 shadow-sm sm:p-6 ${rev.is_correct ? "border-stone-200" : "border-red-200"
+                }`}
             >
               <div className="flex items-start gap-3">
                 {rev.is_correct ? (
@@ -227,16 +225,15 @@ export default function QuizResultsPage({ params }: { params: Promise<{ id: stri
                       Question {idx + 1}
                     </span>
                     <span
-                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
-                        rev.is_correct
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-red-100 text-red-700"
-                      }`}
+                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${rev.is_correct
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-red-100 text-red-700"
+                        }`}
                     >
                       {rev.is_correct ? "Correct" : "Missed"}
                     </span>
                   </div>
-                  <h3 className="mt-1.5 text-base font-bold leading-snug text-stone-900 sm:text-lg">
+                  <h3 className="quiz-question-text mt-1.5 text-base font-bold text-stone-900 sm:text-lg">
                     <MathText text={rev.question} />
                   </h3>
                 </div>
@@ -245,11 +242,10 @@ export default function QuizResultsPage({ params }: { params: Promise<{ id: stri
               {/* Answer comparison */}
               <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
                 <div
-                  className={`rounded-xl border px-3.5 py-2.5 ${
-                    rev.is_correct
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                      : "border-red-200 bg-red-50 text-red-900"
-                  }`}
+                  className={`rounded-xl border px-3.5 py-2.5 ${rev.is_correct
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                    : "border-red-200 bg-red-50 text-red-900"
+                    }`}
                 >
                   <span className="font-bold">Your choice: </span>
                   {rev.selected_option ? `Option ${rev.selected_option}` : "Not answered"}
@@ -259,9 +255,10 @@ export default function QuizResultsPage({ params }: { params: Promise<{ id: stri
                 </div>
               </div>
 
-              {/* Explanation */}
-              <div className="mt-3 rounded-xl bg-stone-50 px-3.5 py-3 text-sm leading-relaxed text-stone-600">
-                <span className="font-semibold text-stone-900">Explanation: </span>
+              <div className="mt-3 min-w-0 rounded-xl bg-stone-50 px-3.5 py-3 text-sm leading-relaxed text-stone-600">
+                <span className="font-semibold text-stone-900">
+                  Explanation:{" "}
+                </span>
                 <MathText text={rev.explanation} />
               </div>
 

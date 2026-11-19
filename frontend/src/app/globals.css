@@ -14,3 +14,49 @@ body {
   margin: 0;
   padding: 0;
 }
+
+
+
+/* Hindi / Devanagari rendering */
+html,
+body {
+  font-family: var(--font-hindi), sans-serif;
+}
+
+.hindi-text {
+  font-family: var(--font-hindi), sans-serif;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+/* Prevent long questions from overflowing */
+.quiz-question-text {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  line-height: 1.7;
+}
+
+/* Answer options */
+.quiz-option-text {
+  min-width: 0;
+  flex: 1;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  line-height: 1.7;
+}
+
+/* Math expressions */
+.katex {
+  max-width: 100%;
+}
+
+.katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}

@@ -310,40 +310,21 @@ export default function UsersPage() {
     return () => clearTimeout(timer);
   }, [notice]);
 
-  const handleRoleChange = async (
-    user: AdminUserListItem,
-    role: UserRole
-  ) => {
-    if (savingId) return;
-
+  const handleRoleChange = async (user: AdminUserListItem, role: "admin" | "student") => {
     setSavingId(user.id);
     setNotice(null);
-
     try {
       const updated = await apiClient.updateUserRole(user.id, role);
-
       setUsers((prev) =>
-        prev.map((u) =>
-          u.id === user.id
-            ? { ...u, role: updated.role }
-            : u
-        )
+        prev.map((u) => (u.id === user.id ? { ...u, role: updated.role ?? role } : u))
       );
-
       setNotice({
         type: "ok",
-        text: `${user.name} is now ${
-          role === "admin" ? "an admin" : "a student"
-        }.`,
+        text: `${user.name} is now ${role === "admin" ? "an admin" : "a student"}.`,
       });
-    } catch (err: unknown) {
-      setNotice({
-        type: "error",
-        text:
-          err instanceof Error
-            ? err.message
-            : "Could not update the role.",
-      });
+    } catch (err: any) {
+      // The list is unchanged, so the dropdown snaps back to the old role
+      setNotice({ type: "error", text: err?.message || "Could not update the role." });
     } finally {
       setSavingId(null);
     }
