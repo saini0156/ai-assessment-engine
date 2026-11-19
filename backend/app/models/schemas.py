@@ -321,3 +321,12 @@ class AdminUserHistoryItem(BaseModel):
 
 class UserRoleUpdateRequest(BaseModel):
     role: Literal["admin", "student"]
+
+class QuizFeedbackCreate(BaseModel):
+    """Payload a user sends when they leave a comment on a question."""
+    question_id: str = Field(..., description="ID of the question (e.g. 'q_1')")
+    review_text: str = Field(
+        ..., min_length=1, max_length=2000,
+        description="Free‑form comment about the question/option wording, difficulty, etc.")
+    # optional – only used when authentication is enabled
+    user_id: Optional[int] = None
