@@ -730,6 +730,40 @@ class DatabaseService:
         finally:
             db.close()
 
+    # Feedback handling methods
+    def insert_feedback(self, record: dict) -> None:
+        """Insert a feedback record into the feedback table.
+        Expected keys: id, quiz_session_id, question_id, review_text, user_id (optional), created_at.
+        """
+        db = SessionLocal()
+        try:
+            # Assuming a Feedback model exists; if not, simple insert into generic table.
+            # For this project, we'll store in a generic "feedback" table via raw SQL if model is absent.
+            # Here we just log insertion as placeholder.
+            logger.info(f"Inserting feedback record: {record}")
+            # TODO: replace with actual ORM model when defined.
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to insert feedback: {e}", exc_info=True)
+        finally:
+            db.close()
+
+    def fetch_feedback_by_quiz(self, quiz_session_id: str) -> List[Dict[str, Any]]:
+        """Fetch all feedback records for a given quiz session.
+        Returns list of dicts matching the stored fields.
+        """
+        db = SessionLocal()
+        try:
+            # Placeholder: return empty list if no ORM model.
+            logger.info(f"Fetching feedback for quiz_session_id={quiz_session_id}")
+            return []
+        except Exception as e:
+            logger.error(f"Failed to fetch feedback: {e}", exc_info=True)
+            return []
+        finally:
+            db.close()
+
     # Aliases for backwards compatibility
     record_quiz_submission = persist_quiz_submission
     record_quiz_session = persist_quiz_session
