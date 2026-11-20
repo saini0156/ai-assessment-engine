@@ -19,7 +19,7 @@ import {
   X,
 } from "lucide-react";
 
-const COUNTS = [3, 5, 10];
+const COUNTS = [10, 30 , 50];
 const LEVELS = ["Easy", "Medium", "Hard"];
 
 type QuizMode = "notes" | "hybrid" | "ai";
@@ -238,7 +238,7 @@ function QuizConfigForm() {
   const [subject, setSubject] = useState("");
   const [topic, setTopic] = useState("");
   const [loadingSubjects, setLoadingSubjects] = useState(true);
-  const [count, setCount] = useState(5);
+  const [count, setCount] = useState(30);
   const [difficulty, setDifficulty] = useState("Medium");
   const [mode, setMode] = useState<QuizMode>("hybrid");
   const [loading, setLoading] = useState(false);
