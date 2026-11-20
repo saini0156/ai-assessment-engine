@@ -59,7 +59,8 @@ MODE_DIRECTIVES = {
     "notes": """
 GENERATION MODE: STRICT NOTES GROUNDING
 - 100% of questions must be directly based on the facts, definitions, formulas, and examples explicitly written in the REFERENCE STUDY MATERIAL.
-- DO NOT introduce outside concepts, hypothetical technologies, or scenarios absent from the notes.
+- DO NOT introduce outside concepts or hypothetical technologies absent from the notes.
+- DIVERSITY & COVERAGE RULE: Do NOT ask only top-level introductory definitions. Test every sub-section, numerical data point, cause-and-effect relationship, formula, comparison, and detail. Formulate inverted questions (e.g. 'Which statement is FALSE according to the notes?'), condition-change questions, and deep conceptual checks grounded strictly in the provided material.
 """,
     "hybrid": """
 GENERATION MODE: HYBRID (NOTES + AI REAL-WORLD APPLICATION)
