@@ -15,6 +15,7 @@ from app.models.question import Question
 from app.models.quiz_session import QuizSession
 from app.models.quiz_session_question import QuizSessionQuestion
 from app.models.quiz_answer import QuizAnswer
+from app.models.feedback import Feedback
 from app.models.schemas import InternalQuizSession, QuestionReview, InternalQuestion
 
 logger = logging.getLogger(__name__)
@@ -732,20 +733,26 @@ class DatabaseService:
 
     # Feedback handling methods
     def insert_feedback(self, record: dict) -> None:
-        """Insert a feedback record into the feedback table.
+        """Insert a feedback record into the quiz_feedback table.
         Expected keys: id, quiz_session_id, question_id, review_text, user_id (optional), created_at.
         """
         db = SessionLocal()
         try:
-            # Assuming a Feedback model exists; if not, simple insert into generic table.
-            # For this project, we'll store in a generic "feedback" table via raw SQL if model is absent.
-            # Here we just log insertion as placeholder.
-            logger.info(f"Inserting feedback record: {record}")
-            # TODO: replace with actual ORM model when defined.
+            fb = Feedback(
+                id=record.get("id") or str(uuid.uuid4()),
+                quiz_session_id=str(record["quiz_session_id"]),
+                question_id=str(record["question_id"]),
+                review_text=str(record["review_text"]),
+                user_id=str(record["user_id"]) if record.get("user_id") else None,
+                created_at=datetime.now(timezone.utc),
+            )
+            db.add(fb)
             db.commit()
+            logger.info(f"Persisted question feedback {fb.id} for quiz_session={fb.quiz_session_id}, question={fb.question_id}")
         except Exception as e:
             db.rollback()
             logger.error(f"Failed to insert feedback: {e}", exc_info=True)
+            raise e
         finally:
             db.close()
 
@@ -755,11 +762,52 @@ class DatabaseService:
         """
         db = SessionLocal()
         try:
-            # Placeholder: return empty list if no ORM model.
-            logger.info(f"Fetching feedback for quiz_session_id={quiz_session_id}")
-            return []
+            rows = (
+                db.query(Feedback)
+                .filter(Feedback.quiz_session_id == quiz_session_id)
+                .order_by(Feedback.created_at.desc())
+                .all()
+            )
+            return [
+                {
+                    "id": r.id,
+                    "quiz_session_id": r.quiz_session_id,
+                    "question_id": r.question_id,
+                    "review_text": r.review_text,
+                    "user_id": r.user_id,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                }
+                for r in rows
+            ]
         except Exception as e:
             logger.error(f"Failed to fetch feedback: {e}", exc_info=True)
+            return []
+        finally:
+            db.close()
+
+    def get_all_feedback(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Fetch all feedback records across all quizzes (Admin)."""
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(Feedback)
+                .order_by(Feedback.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+            return [
+                {
+                    "id": r.id,
+                    "quiz_session_id": r.quiz_session_id,
+                    "question_id": r.question_id,
+                    "review_text": r.review_text,
+                    "user_id": r.user_id,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                }
+                for r in rows
+            ]
+        except Exception as e:
+            logger.error(f"Failed to fetch all feedback: {e}", exc_info=True)
             return []
         finally:
             db.close()

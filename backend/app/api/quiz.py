@@ -129,12 +129,21 @@ async def submit_quiz(
         )
         if is_correct:
             correct_count += 1
+
+        user_choice_key = user_answer.strip().upper() if user_answer else None
+        correct_choice_key = internal_q.correct_option.strip().upper() if internal_q.correct_option else ""
+        selected_text = internal_q.options.get(user_choice_key) if user_choice_key else None
+        correct_text = internal_q.options.get(correct_choice_key)
+
         reviews.append(
             QuestionReview(
                 question_id=q_id,
                 question=internal_q.question,
+                options=internal_q.options,
                 selected_option=user_answer,
+                selected_option_text=selected_text,
                 correct_option=internal_q.correct_option,
+                correct_option_text=correct_text,
                 is_correct=is_correct,
                 explanation=internal_q.explanation,
             )
@@ -243,17 +252,15 @@ async def submit_question_feedback(
     """Store per‑question feedback from the frontend.
     Returns the generated feedback ID.
     """
-    # Ensure the quiz session exists
-    session = session_store.get_session(quiz_session_id)
-    if not session:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Quiz session '{quiz_session_id}' not found or has expired.",
-        )
-    # Include user ID if authenticated
     data = payload.model_dump()
     if current_user:
-        data["user_id"] = current_user.id
+        data["user_id"] = str(current_user.id)
     # Save using the feedback service
     fb_id = feedback_service.save_feedback(quiz_session_id, data)
     return {"feedback_id": fb_id}
+
+
+@router.get("/{quiz_session_id}/feedback", response_model=List[dict])
+async def get_quiz_feedback(quiz_session_id: str):
+    """Retrieve feedback records for a given quiz session."""
+    return feedback_service.list_feedback(quiz_session_id)

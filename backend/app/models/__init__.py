@@ -14,3 +14,4 @@ from app.models.quiz_session_question import QuizSessionQuestion
 from app.models.quiz_session_topic import QuizSessionTopic
 from app.models.quiz_session_document import QuizSessionDocument
 from app.models.quiz_answer import QuizAnswer
+from app.models.feedback import Feedback
