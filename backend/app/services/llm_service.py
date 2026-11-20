@@ -507,8 +507,9 @@ class LLMService:
             raise RuntimeError("No Gemini API keys configured.")
 
         last_error = None
-        # Active Gemini models: 3.8-flash (GA production), flash-latest (active alias), 3.1-pro-preview
+        # Active Gemini models: gemini-flash-lite-latest (fastest, high availability), gemini-3.8-flash, gemini-flash-latest
         gemini_models = [
+            "gemini-flash-lite-latest",
             "gemini-3.8-flash",
             "gemini-flash-latest",
             "gemini-3.1-pro-preview",
