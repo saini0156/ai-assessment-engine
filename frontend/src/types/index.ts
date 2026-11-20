@@ -55,8 +55,11 @@ export interface QuizSubmitRequest {
 export interface QuestionReview {
   question_id: string;
   question: string;
-  selected_option: string | null;
-  correct_option: string;
+  options?: Record<string, string>; // All 4 options: { A: "...", B: "...", ... }
+  selected_option: string | null; // e.g. "B"
+  selected_option_text?: string | null; // Text of the selected option
+  correct_option: string; // e.g. "A"
+  correct_option_text?: string | null; // Text of the correct option
   is_correct: boolean;
   explanation: string;
 }
