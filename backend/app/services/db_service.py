@@ -550,6 +550,45 @@ class DatabaseService:
         finally:
             db.close()
 
+    def get_recent_question_texts(
+        self,
+        subject_name: str,
+        topic_name: str,
+        limit: int = 15,
+    ) -> List[str]:
+        """
+        Retrieves the most recent question texts for a subject and topic to prevent question repetition.
+        """
+        db = SessionLocal()
+        try:
+            from sqlalchemy import func
+            subj = db.query(Subject).filter(func.lower(Subject.name) == subject_name.strip().lower()).first()
+            if not subj:
+                return []
+            topic = db.query(Topic).filter(
+                Topic.subject_id == subj.id,
+                func.lower(Topic.name) == topic_name.strip().lower()
+            ).first()
+            if not topic:
+                return []
+
+            rows = (
+                db.query(Question.question_text)
+                .filter(
+                    Question.subject_id == subj.id,
+                    Question.topic_id == topic.id,
+                )
+                .order_by(Question.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+            return [r[0].strip() for r in rows if r[0] and len(r[0].strip()) > 5]
+        except Exception as e:
+            logger.warning(f"Failed to fetch recent questions: {e}")
+            return []
+        finally:
+            db.close()
+
     def get_quiz_history(self, limit: int = 50) -> List[Dict[str, Any]]:
         """
         Retrieves recent quiz sessions with their scores, subject, topic, and completion status.

@@ -658,6 +658,7 @@ class LLMService:
         language: str = "Auto",
         context: Optional[str] = None,
         mode: str = "hybrid",
+        avoid_questions: Optional[List[str]] = None,
     ) -> List[InternalQuestion]:
         """Generates a slice of questions with context to avoid duplicate questions."""
         diff_key = difficulty.strip().capitalize() if difficulty else "Medium"
@@ -743,6 +744,15 @@ class LLMService:
             f"- Generate a brand new, unique set of questions testing diverse subtopics and angles for '{topic}'.\n"
             f"- Avoid repeating standard introductory questions; craft fresh scenarios, applied problems, and calculations."
         )
+
+        if avoid_questions:
+            clean_avoid = "\n".join(f"- {q}" for q in avoid_questions[:10])
+            prompt += (
+                f"\n\nCRITICAL ANTI-REPETITION CONSTRAINT:\n"
+                f"The following questions/concepts were ALREADY asked in recent tests for other students:\n"
+                f"{clean_avoid}\n"
+                f"You MUST NOT generate questions testing these exact items. Test completely DIFFERENT paragraphs, facts, calculations, or subtopics."
+            )
 
         # Tier 0: FreeLLMAPI Unified Gateway (14-Key Pool)
         if settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY:
@@ -943,12 +953,31 @@ class LLMService:
             except Exception as e_bank:
                 logger.warning("Question Bank lookup error: %s", e_bank)
 
+        # Fetch recent questions from DB to enforce anti-repetition across different user sessions
+        recent_questions: List[str] = []
+        if db_service:
+            try:
+                recent_questions = db_service.get_recent_question_texts(subject, topic, limit=12)
+            except Exception as e_rec:
+                logger.warning("Could not fetch recent questions: %s", e_rec)
+
         needed = count - len(all_questions)
 
         # Tier 1: Generate remaining deficit in parallel batches of 5 with notes grounding
         if needed > 0:
             if needed <= 5:
-                generated = self._generate_chunk(subject, topic, needed, difficulty, 1, 1, language=language, context=notes_context, mode=mode_clean)
+                generated = self._generate_chunk(
+                    subject,
+                    topic,
+                    needed,
+                    difficulty,
+                    1,
+                    1,
+                    language=language,
+                    context=notes_context,
+                    mode=mode_clean,
+                    avoid_questions=recent_questions,
+                )
             else:
                 chunk_size = 5
                 chunks = []
@@ -976,6 +1005,7 @@ class LLMService:
                             language=language,
                             context=notes_context,
                             mode=mode_clean,
+                            avoid_questions=recent_questions,
                         )
                         futures.append(f)
 
