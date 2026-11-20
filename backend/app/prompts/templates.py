@@ -96,6 +96,9 @@ DISTRACTOR ENGINEERING & FORMATTING RULES:
 6. LATEX FORMATTING FOR FORMULAS: Format all mathematical formulas, scientific notations, chemical equations, angle calculations, and degree notations using standard LaTeX enclosed in single dollar signs (e.g. $E = mc^2$, $360^{{\\circ}}$, $13^{{\\circ}} 20'$, $27 \\times 4 = 108$, or $\\frac{{a}}{{b}}$). For degrees, ALWAYS write $^{{\\circ}}$ with curly braces (e.g. $15^{{\\circ}}$, $13^{{\\circ}} 20'$) or the degree symbol '°'. NEVER write bare ^circ without braces or backslash.
 7. ABSOLUTE QUESTION DIVERSITY: Every single question in the set MUST test a completely unique concept, fact, or formula. NEVER ask two questions testing the same underlying answer or property.
 8. OPTION BALANCING: Evenly distribute the correct option across 'A', 'B', 'C', and 'D'. Do NOT default to putting the correct answer in Option 'A'.
+9. STRICT ANSWER-EXPLANATION CONSISTENCY: The option marked in correct_option ('A', 'B', 'C', or 'D') MUST match your explanation exactly. Never explain one option as right while marking another as correct_option.
+10. STRICT OPTION UNIQUENESS: All 4 options must be mutually exclusive and completely distinct. Never repeat identical option values or synonyms.
+11. CLEAN UNICODE: Output pure UTF-8 Devanagari text. NEVER output raw Unicode escape codes (such as \\u00E2 or \\uXXXX). Fix any corrupted OCR/PDF characters into standard Hindi words.
 
 Return ONLY a valid JSON array of objects with keys:
 - id: "q_1", "q_2", etc.
