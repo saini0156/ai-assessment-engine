@@ -373,6 +373,16 @@ class GroqKeyPool:
 from app.services.mock_data import MockAIEngine
 
 
+DEAD_MODELS: Dict[str, float] = {}
+
+def is_model_dead(model: str) -> bool:
+    return DEAD_MODELS.get(model, 0) > time.time()
+
+def mark_model_dead(model: str, duration: float = 3600.0):
+    DEAD_MODELS[model] = time.time() + duration
+    logger.warning("Model '%s' marked decommissioned/dead for %ds. Skipping future attempts.", model, int(duration))
+
+
 class LLMService:
     """
     Two-Tier Fast Multi-Provider AI Service:
@@ -398,7 +408,7 @@ class LLMService:
         )
 
     # -------------------------------------------------------------
-    # Groq API Caller with Multi-Key Rotation & 429 Failover
+    # Groq API Caller with Model Fast-Fail & Multi-Key Rotation
     # -------------------------------------------------------------
     def _call_groq(self, prompt: str, system_message: str = "", temperature: float = 0.7) -> Any:
         keys_to_try = list(self.groq_pool.keys)
@@ -420,41 +430,41 @@ class LLMService:
             user_prompt += "\nOutput strictly as a JSON object."
         messages.append({"role": "user", "content": user_prompt})
 
-        # High-speed active Groq model list prioritized by response latency and account availability
+        # High-speed active Groq model list (Active 2026 Production Tier)
         models_to_try = [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "deepseek-r1-distill-llama-70b",
-            "gemma2-9b-it",
-            "mixtral-8x7b-32768",
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
+            "qwen/qwen3.8-27b",
         ]
 
         last_error = None
-        for api_key in keys_to_try:
-            masked = f"...{api_key[-4:]}" if len(api_key) >= 4 else "key"
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            }
-            for model_candidate in models_to_try:
+        for model_candidate in models_to_try:
+            if is_model_dead(model_candidate):
+                continue
+
+            for api_key in keys_to_try:
+                masked = f"...{api_key[-4:]}" if len(api_key) >= 4 else "key"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                }
                 try:
                     payload = {
                         "model": model_candidate,
                         "messages": messages,
-                        "response_format": {"type": "json_object"},
                         "temperature": temperature,
                         "max_tokens": 4096,
                     }
                     resp = self._groq_client.post(url, json=payload, headers=headers)
-                    if resp.status_code == 400 and "response_format" in payload:
-                        # Some models (e.g. gemma2, mixtral) do not support response_format="json_object"
-                        # Retry without response_format since prompt already enforces JSON format
-                        del payload["response_format"]
-                        resp = self._groq_client.post(url, json=payload, headers=headers)
+                    if resp.status_code == 404:
+                        logger.warning("Groq model %s returned 404 Not Found. Marking dead and skipping remaining keys.", model_candidate)
+                        mark_model_dead(model_candidate)
+                        break  # 404 is a model issue, don't try other keys!
 
                     if resp.status_code == 429:
                         logger.warning("Groq 429 Rate Limit hit on key %s. Rotating to next key...", masked)
-                        break  # Try next API key
+                        continue  # Try next API key
+
                     resp.raise_for_status()
                     content = resp.json()["choices"][0]["message"]["content"]
                     parsed = sanitize_and_parse_json(content)
@@ -473,7 +483,7 @@ class LLMService:
         raise RuntimeError(f"All Groq keys and models failed. Last error: {last_error}")
 
     # -------------------------------------------------------------
-    # High-Performance Gemini API Caller (Direct REST + 503 Auto-Retry + Key Failover)
+    # High-Performance Gemini API Caller (Active 3.x Models + 404 Fast-Fail + 503 Auto-Retry)
     # -------------------------------------------------------------
     def _call_gemini(self, prompt: str, temperature: float = 0.7) -> Any:
         keys_to_try = list(self.gemini_keys)
@@ -481,17 +491,20 @@ class LLMService:
             raise RuntimeError("No Gemini API keys configured.")
 
         last_error = None
-        # High quality Hindi & general models: 2.0-flash (fast, stable), 1.5-pro (highest quality Hindi), flash-latest (fallback)
+        # Active Gemini models: 3.8-flash (GA production), flash-latest (active alias), 3.1-pro-preview
         gemini_models = [
-            "gemini-2.0-flash",
-            "gemini-1.5-pro",
+            "gemini-3.8-flash",
             "gemini-flash-latest",
-            "gemini-1.5-flash",
+            "gemini-3.1-pro-preview",
+            "gemini-3.5-flash",
         ]
 
-        for api_key in keys_to_try:
-            masked = f"...{api_key[-4:]}" if len(api_key) >= 4 else "key"
-            for gemini_model in gemini_models:
+        for gemini_model in gemini_models:
+            if is_model_dead(gemini_model):
+                continue
+
+            for api_key in keys_to_try:
+                masked = f"...{api_key[-4:]}" if len(api_key) >= 4 else "key"
                 try:
                     url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={api_key}"
                     headers = {
@@ -507,14 +520,22 @@ class LLMService:
                         }
                     }
                     resp = self._groq_client.post(url, json=payload, headers=headers, timeout=45.0)
+
+                    if resp.status_code == 404:
+                        logger.warning("Gemini model %s returned 404 Not Found. Marking dead and skipping remaining keys.", gemini_model)
+                        mark_model_dead(gemini_model)
+                        break  # 404 is a model issue, don't try other keys!
+
                     if resp.status_code == 429:
                         logger.warning("Gemini 429 rate limit hit on key %s. Rotating to next key...", masked)
-                        break  # Rotate to next key immediately
+                        continue  # Rotate to next key immediately
 
                     if resp.status_code == 503:
                         logger.warning("Gemini REST model %s on key %s overloaded (503). Retrying in 1.5s...", gemini_model, masked)
                         time.sleep(1.5)
                         resp = self._groq_client.post(url, json=payload, headers=headers, timeout=45.0)
+                        if resp.status_code == 503:
+                            continue  # Try next key on persistent 503
 
                     resp.raise_for_status()
                     data = resp.json()
@@ -596,8 +617,8 @@ class LLMService:
 
         prompt = TOPIC_EXTRACTION_PROMPT.format(subject=subject, text=text[:12000], language_directive=lang_directive)
 
-        # Tier 0: FreeLLMAPI Unified Gateway (14-Key Pool) - Skipped for Hindi to ensure pure authentic Gemini NCERT output
-        if settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY and not is_hindi:
+        # Tier 0: FreeLLMAPI Unified Gateway (Disabled due to persistent 429 gateway rate limit)
+        if False and settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY:
             try:
                 target_model = "gemini-flash" if is_hindi else "qwen3.8-27b"
                 data = self._call_freellmapi(
@@ -783,8 +804,8 @@ class LLMService:
                 f"You MUST NOT generate questions testing these exact items. Test completely DIFFERENT paragraphs, facts, calculations, or subtopics."
             )
 
-        # Tier 0: FreeLLMAPI Unified Gateway (14-Key Pool) - Skipped for Hindi to ensure pure authentic Gemini NCERT output
-        if settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY and not is_hindi:
+        # Tier 0: FreeLLMAPI Unified Gateway (Disabled due to persistent 429 gateway rate limit)
+        if False and settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY:
             try:
                 target_model = "gemini-flash" if is_hindi else "qwen3.8-27b"
                 data = self._call_freellmapi(
@@ -920,7 +941,7 @@ class LLMService:
                             res = f.result(timeout=45.0)
                             all_generated_questions.extend(res)
                         except Exception as e_sharded:
-                            logger.error("Full syllabus sharded worker error: %s", e_sharded)
+                            logger.exception("Full syllabus sharded worker error: %r", e_sharded)
 
                 import random
                 deduped: List[InternalQuestion] = []
@@ -1045,7 +1066,7 @@ class LLMService:
                             if res:
                                 generated.extend(res)
                         except Exception as e:
-                            logger.error("Parallel batch %d execution error: %s", idx, e)
+                            logger.exception("Parallel batch %d execution error: %r", idx, e)
 
             # Deduplicate by multi-factor similarity and answer collision against existing questions
             for q in generated:
@@ -1093,8 +1114,8 @@ class LLMService:
             )
             fill_prompt += f"\nDEFICIT FILL ATTEMPT {deficit_attempts}: Generate brand new distinct questions testing unique aspects."
 
-            # Tier 0: FreeLLMAPI Unified Gateway (Skipped for Hindi to ensure pure authentic Gemini NCERT output)
-            if settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY and len(questions_dict) < count and not is_hindi_lang:
+            # Tier 0: FreeLLMAPI Unified Gateway (Disabled due to persistent 429 gateway rate limit)
+            if False and settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY and len(questions_dict) < count:
                 try:
                     target_model = "gemini-flash" if is_hindi_lang else "qwen3.8-27b"
                     data = self._call_freellmapi(fill_prompt, model=target_model)
