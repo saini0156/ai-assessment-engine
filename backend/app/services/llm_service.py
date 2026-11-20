@@ -5,6 +5,7 @@ import logging
 import random
 import re
 import threading
+import time
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -472,7 +473,7 @@ class LLMService:
         raise RuntimeError(f"All Groq keys and models failed. Last error: {last_error}")
 
     # -------------------------------------------------------------
-    # High-Performance Gemini API Caller (Direct REST + SDK Fallback)
+    # High-Performance Gemini API Caller (Direct REST + 503 Auto-Retry + Key Failover)
     # -------------------------------------------------------------
     def _call_gemini(self, prompt: str, temperature: float = 0.7) -> Any:
         keys_to_try = list(self.gemini_keys)
@@ -480,12 +481,17 @@ class LLMService:
             raise RuntimeError("No Gemini API keys configured.")
 
         last_error = None
-        gemini_models = ["gemini-flash-latest", "gemini-2.0-flash", "gemini-1.5-flash"]
+        # High quality Hindi & general models: 2.0-flash (fast, stable), 1.5-pro (highest quality Hindi), flash-latest (fallback)
+        gemini_models = [
+            "gemini-2.0-flash",
+            "gemini-1.5-pro",
+            "gemini-flash-latest",
+            "gemini-1.5-flash",
+        ]
 
         for api_key in keys_to_try:
             masked = f"...{api_key[-4:]}" if len(api_key) >= 4 else "key"
             for gemini_model in gemini_models:
-                # 1. Primary: Direct Fast REST API via httpx using official x-goog-api-key header
                 try:
                     url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={api_key}"
                     headers = {
@@ -502,7 +508,13 @@ class LLMService:
                     resp = self._groq_client.post(url, json=payload, headers=headers, timeout=45.0)
                     if resp.status_code == 429:
                         logger.warning("Gemini 429 rate limit hit on key %s. Rotating to next key...", masked)
-                        break
+                        break  # Rotate to next key immediately
+
+                    if resp.status_code == 503:
+                        logger.warning("Gemini REST model %s on key %s overloaded (503). Retrying in 1.5s...", gemini_model, masked)
+                        time.sleep(1.5)
+                        resp = self._groq_client.post(url, json=payload, headers=headers, timeout=45.0)
+
                     resp.raise_for_status()
                     data = resp.json()
                     candidates = data.get("candidates", [])
@@ -519,29 +531,7 @@ class LLMService:
                 except Exception as e_rest:
                     last_error = e_rest
                     logger.warning("Gemini REST model %s on key %s failed: %s", gemini_model, masked, e_rest)
-
-                # 2. Secondary: google-genai SDK with v1beta forced
-                try:
-                    from google import genai
-                    client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
-                    def _execute():
-                        return client.models.generate_content(
-                            model=gemini_model,
-                            contents=prompt,
-                            config={"response_mime_type": "application/json"},
-                        )
-                    future = self._executor.submit(_execute)
-                    response = future.result(timeout=25.0)
-                    text = getattr(response, "text", "").strip()
-                    if text:
-                        parsed = sanitize_and_parse_json(text)
-                        if isinstance(parsed, dict):
-                            for val in parsed.values():
-                                if isinstance(val, list):
-                                    return val
-                        return parsed
-                except Exception as e_sdk:
-                    last_error = e_sdk
+                    continue
 
         raise RuntimeError(f"All Gemini models and keys failed. Last error: {last_error}")
 
@@ -605,8 +595,8 @@ class LLMService:
 
         prompt = TOPIC_EXTRACTION_PROMPT.format(subject=subject, text=text[:12000], language_directive=lang_directive)
 
-        # Tier 0: FreeLLMAPI Unified Gateway (14-Key Pool)
-        if settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY:
+        # Tier 0: FreeLLMAPI Unified Gateway (14-Key Pool) - Skipped for Hindi to ensure pure authentic Gemini NCERT output
+        if settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY and not is_hindi:
             try:
                 target_model = "gemini-flash" if is_hindi else "qwen3.8-27b"
                 data = self._call_freellmapi(
@@ -761,8 +751,8 @@ class LLMService:
                 f"You MUST NOT generate questions testing these exact items. Test completely DIFFERENT paragraphs, facts, calculations, or subtopics."
             )
 
-        # Tier 0: FreeLLMAPI Unified Gateway (14-Key Pool)
-        if settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY:
+        # Tier 0: FreeLLMAPI Unified Gateway (14-Key Pool) - Skipped for Hindi to ensure pure authentic Gemini NCERT output
+        if settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY and not is_hindi:
             try:
                 target_model = "gemini-flash" if is_hindi else "qwen3.8-27b"
                 data = self._call_freellmapi(
@@ -1066,8 +1056,8 @@ class LLMService:
                 context_block=f"REFERENCE NOTES:\n{notes_context[:8000]}" if notes_context else "",
             )
 
-            # Tier 0: FreeLLMAPI Unified Gateway
-            if settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY and len(questions_dict) < count:
+            # Tier 0: FreeLLMAPI Unified Gateway (Skipped for Hindi to ensure pure authentic Gemini NCERT output)
+            if settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY and len(questions_dict) < count and not is_hindi_lang:
                 try:
                     target_model = "gemini-flash" if is_hindi_lang else "qwen3.8-27b"
                     data = self._call_freellmapi(fill_prompt, model=target_model)
