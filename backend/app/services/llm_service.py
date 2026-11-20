@@ -30,7 +30,9 @@ def clean_math_text(s: str) -> str:
     """
     Standardizes LaTeX math formulas and fixes broken LLM notation:
       - Converts ^circ, ^{circ}, ^\\circ into standard ^{\\circ}
+      - Normalizes degree notations (e.g. 15° -> 15^{\\circ})
       - Adds spacing between degree and minutes (e.g. 13^{\\circ} 20')
+      - Wraps bare LaTeX math commands in $...$ if not already delimited
     """
     if not s:
         return s
@@ -39,7 +41,64 @@ def clean_math_text(s: str) -> str:
     s = re.sub(r'\^\{?\\?circ\}?', r'^{\\circ}', s)
     # 2. Add space after degree if followed by a number: ^{\circ}30' -> ^{\circ} 30'
     s = re.sub(r'(\^\{\\circ\})(\d+)', r'\1 \2', s)
+    # 3. Handle unicode degree symbol: 360° -> 360^{\circ}
+    s = re.sub(r'(\d+)\s*°(?!\w)', r'\1^{\\circ}', s)
+
+    # 4. If string contains raw LaTeX commands and has no $, wrap it in $ so KaTeX renders it
+    if "\\" in s and "$" not in s:
+        math_keywords = ["\\frac", "\\sqrt", "\\times", "\\pm", "\\sum", "\\int", "\\alpha", "\\beta", "\\theta", "\\pi", "\\cdot", "\\le", "\\ge", "\\ne", "\\approx"]
+        if any(kw in s for kw in math_keywords):
+            s = f"${s}$"
+
+    # 5. Decode literal unicode escapes like \u{00E2} or \u00e2 and fix Hindi font artifacts
+    def _decode_hex_brace(match):
+        try:
+            return chr(int(match.group(1), 16))
+        except Exception:
+            return ""
+    s = re.sub(r'\\u\{([0-9a-fA-F]+)\}', _decode_hex_brace, s)
+
+    def _decode_hex4(match):
+        try:
+            return chr(int(match.group(1), 16))
+        except Exception:
+            return ""
+    s = re.sub(r'\\u([0-9a-fA-F]{4})', _decode_hex4, s)
+
+    # Fix common Hindi PDF ligature corruptions (e.g. 'भचâड' or 'भच\u{00E2}ड' -> 'भचक्र')
+    s = re.sub(r'भच[â\u00e2\?]+ड?', 'भचक्र', s)
+    s = s.replace('â€™', "'").replace('â€œ', '"').replace('â€', '"')
+
+    # Common Hindi spelling normalization (e.g. 'घुमने' -> 'घूमने')
+    s = s.replace('घुमने', 'घूमने')
+
     return s
+
+
+def sanitize_and_parse_json(raw_text: str) -> Any:
+    """
+    Ultra-resilient JSON parser:
+      - Strips markdown code blocks (```json ... ```)
+      - Unescapes trailing commas (, } -> })
+      - Extracts JSON array or object if surrounded by preamble/chatter
+    """
+    import re, json
+    text = (raw_text or "").strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\s*```$", "", text, flags=re.MULTILINE)
+    text = text.strip()
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Locate outermost JSON structure [ ... ] or { ... }
+        match = re.search(r"(\[.*\]|\{.*\})", text, re.DOTALL)
+        if match:
+            candidate = match.group(1).strip()
+            # Clean trailing commas: ,] -> ] and ,} -> }
+            candidate = re.sub(r",\s*([\]\}])", r"\1", candidate)
+            return json.loads(candidate)
+        raise
 
 
 def normalize_ai_question(item: Any, idx: int) -> Optional[InternalQuestion]:
@@ -47,12 +106,14 @@ def normalize_ai_question(item: Any, idx: int) -> Optional[InternalQuestion]:
     Robust normalizer that adapts any LLM response structure:
       - options as list ["A", "B", "C", "D"] or dict {"A": "...", ...}
       - correct_option as integer (0 -> 'A') or string ("A", "Option A", "answer")
+      - auto-detects and aligns answer key if explanation contradicts correct_option
+      - ensures all 4 options are distinct
       - missing explanation auto-filled
     """
     if not isinstance(item, dict):
         return None
 
-    import re
+    import re, random
     q_text = clean_math_text(str(item.get("question") or item.get("question_text") or "").strip())
     if not q_text:
         return None
@@ -78,6 +139,14 @@ def normalize_ai_question(item: Any, idx: int) -> Optional[InternalQuestion]:
         if key not in clean_opts or not clean_opts[key]:
             clean_opts[key] = f"Option {key}"
 
+    # Deduplicate options if any two options are identical
+    seen_texts = set()
+    for key in ["A", "B", "C", "D"]:
+        opt_val = clean_opts[key]
+        if opt_val in seen_texts:
+            clean_opts[key] = f"{opt_val} (Alternative {key})"
+        seen_texts.add(clean_opts[key])
+
     # 2. Normalize Correct Option (handles integer 0, 1, 2, 3 or strings)
     raw_corr = item.get("correct_option") if item.get("correct_option") is not None else (
         item.get("answer") if item.get("answer") is not None else item.get("correct_answer")
@@ -93,9 +162,19 @@ def normalize_ai_question(item: Any, idx: int) -> Optional[InternalQuestion]:
     if not explanation:
         explanation = f"Option {clean_correct} is the verified correct answer for this question."
 
+    # Consistency Check: If explanation explicitly states another option as correct (e.g. "Option C is correct")
+    # align clean_correct before shuffling so answer key is never wrong!
+    explicit_key_match = re.search(
+        r"(?:correct answer is|sahi uttar hai|sahi vikalp hai|correct option is)\s*[:\-]?\s*Option\s*([A-D])\b",
+        explanation,
+        re.IGNORECASE
+    )
+    if explicit_key_match:
+        detected_key = explicit_key_match.group(1).upper()
+        if detected_key in clean_opts and detected_key != clean_correct:
+            clean_correct = detected_key
+
     # 4. Balanced Option Shuffling (Eliminates Option A Bias!)
-    # Shuffles option positions randomly across A, B, C, D so correct answer isn't always A
-    import random
     correct_text = clean_opts.get(clean_correct, clean_opts.get("A", "Option A"))
     opt_pairs = [(k == clean_correct, text) for k, text in clean_opts.items()]
     random.shuffle(opt_pairs)
@@ -108,10 +187,11 @@ def normalize_ai_question(item: Any, idx: int) -> Optional[InternalQuestion]:
         if is_corr:
             new_correct = key
 
-    # In explanation, update any literal "Option X" text if the correct letter moved
+    # In explanation, update any literal references to the old correct letter
     if clean_correct != new_correct:
         explanation = re.sub(rf"\bOption {clean_correct}\b", f"Option {new_correct}", explanation)
         explanation = re.sub(rf"\bविकल्प {clean_correct}\b", f"विकल्प {new_correct}", explanation)
+        explanation = re.sub(rf"\({clean_correct}\)", f"({new_correct})", explanation)
 
     return InternalQuestion(
         id=f"q_{idx}",
@@ -119,6 +199,57 @@ def normalize_ai_question(item: Any, idx: int) -> Optional[InternalQuestion]:
         options=shuffled_opts,
         correct_option=new_correct,
         explanation=explanation,
+    )
+
+
+def shuffle_question_options(q: InternalQuestion) -> InternalQuestion:
+    """
+    Shuffles options (A, B, C, D) randomly for any question (Bank, AI, or Mock)
+    and synchronizes correct_option and explanation accordingly.
+    Guarantees every student receives randomized option ordering.
+    """
+    if not q or not q.options or len(q.options) < 2:
+        return q
+
+    old_correct = q.correct_option.strip().upper() if q.correct_option else "A"
+
+    # Pair each option: (is_correct, text)
+    pairs = []
+    for k in ["A", "B", "C", "D"]:
+        if k in q.options:
+            is_corr = (k.strip().upper() == old_correct)
+            pairs.append((is_corr, q.options[k]))
+
+    for k, text in q.options.items():
+        if k not in ["A", "B", "C", "D"]:
+            is_corr = (k.strip().upper() == old_correct)
+            pairs.append((is_corr, text))
+
+    import random
+    random.shuffle(pairs)
+
+    new_options: Dict[str, str] = {}
+    new_correct = "A"
+    for idx, (is_corr, text) in enumerate(pairs[:4]):
+        key = chr(ord("A") + idx)
+        new_options[key] = text
+        if is_corr:
+            new_correct = key
+
+    explanation = q.explanation or ""
+    if old_correct != new_correct and explanation:
+        import re
+        explanation = re.sub(rf"\bOption {old_correct}\b", f"Option {new_correct}", explanation)
+        explanation = re.sub(rf"\bविकल्प {old_correct}\b", f"विकल्प {new_correct}", explanation)
+        explanation = re.sub(rf"\({old_correct}\)", f"({new_correct})", explanation)
+
+    return InternalQuestion(
+        id=q.id,
+        question=q.question,
+        options=new_options,
+        correct_option=new_correct,
+        explanation=explanation,
+        is_mock=getattr(q, "is_mock", False),
     )
 
 
@@ -271,7 +402,7 @@ class LLMService:
                         "model": model_candidate,
                         "messages": messages,
                         "response_format": {"type": "json_object"},
-                        "temperature": 0.2,
+                        "temperature": 0.1,
                         "max_tokens": 2048,
                     }
                     resp = self._groq_client.post(url, json=payload, headers=headers)
@@ -280,7 +411,7 @@ class LLMService:
                         break  # Try next API key
                     resp.raise_for_status()
                     content = resp.json()["choices"][0]["message"]["content"]
-                    parsed = json.loads(content)
+                    parsed = sanitize_and_parse_json(content)
 
                     # Unpack wrapped lists if nested under keys like {'questions': [...]} or {'topics': [...]}
                     if isinstance(parsed, dict):
@@ -314,7 +445,7 @@ class LLMService:
                         "contents": [{"parts": [{"text": prompt}]}],
                         "generationConfig": {
                             "responseMimeType": "application/json",
-                            "temperature": 0.2,
+                            "temperature": 0.1,
                         }
                     }
                     resp = self._groq_client.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=25.0)
@@ -328,9 +459,7 @@ class LLMService:
                         parts = candidates[0].get("content", {}).get("parts", [])
                         if parts:
                             raw_text = parts[0].get("text", "").strip()
-                            cleaned = re.sub(r"^```(?:json)?\s*", "", raw_text, flags=re.MULTILINE)
-                            cleaned = re.sub(r"\s*```$", "", cleaned, flags=re.MULTILINE)
-                            parsed = json.loads(cleaned.strip())
+                            parsed = sanitize_and_parse_json(raw_text)
                             if isinstance(parsed, dict):
                                 for val in parsed.values():
                                     if isinstance(val, list):
@@ -354,9 +483,7 @@ class LLMService:
                     response = future.result(timeout=25.0)
                     text = getattr(response, "text", "").strip()
                     if text:
-                        cleaned = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
-                        cleaned = re.sub(r"\s*```$", "", cleaned, flags=re.MULTILINE)
-                        parsed = json.loads(cleaned.strip())
+                        parsed = sanitize_and_parse_json(text)
                         if isinstance(parsed, dict):
                             for val in parsed.values():
                                 if isinstance(val, list):
@@ -392,7 +519,7 @@ class LLMService:
             "model": model,
             "messages": messages,
             "response_format": {"type": "json_object"},
-            "temperature": 0.2,
+            "temperature": 0.1,
         }
 
         resp = self._groq_client.post(url, json=payload, headers=headers, timeout=25.0)
@@ -402,9 +529,7 @@ class LLMService:
         logger.info("FreeLLMAPI fulfilled request via: %s", routed_via)
 
         content = resp.json()["choices"][0]["message"]["content"]
-        cleaned = re.sub(r"^```(?:json)?\s*", "", content.strip(), flags=re.MULTILINE)
-        cleaned = re.sub(r"\s*```$", "", cleaned.strip(), flags=re.MULTILINE)
-        parsed = json.loads(cleaned)
+        parsed = sanitize_and_parse_json(content)
 
         if isinstance(parsed, dict):
             for val in parsed.values():
@@ -527,7 +652,8 @@ class LLMService:
                 "  * Use 'समकोण त्रिभुज' for Right-angled triangle (NOT 'सही कोण')\n"
                 "  * Use 'प्रतिरोध' for Resistance, 'विभवांतर' for Potential Difference\n"
                 "- For technical, biological, or modern terms, provide the English term in parentheses: e.g. 'अपवर्तन (Refraction)', 'माइटोकॉन्ड्रिया (Mitochondria)', 'ओम का नियम (Ohm\'s Law)'.\n"
-                "- Keep question phrasing standard and respectful: 'निम्नलिखित में से कौन सा कथन सही है?' or '...का मान ज्ञात कीजिए।'"
+                "- Keep question phrasing standard and respectful: 'निम्नलिखित में से कौन सा कथन सही है?' or '...का मान ज्ञात कीजिए।'\n"
+                "- STRICT UNICODE & FONT CLEANLINESS: Never output raw Unicode escape codes (like \\u{00E2} or \\uXXXX) or font artifacts. If reference notes contain corrupted OCR/PDF characters (e.g. 'भच\\u{00E2}ड'), fix them into standard Hindi (e.g. 'भचक्र (Zodiac Belt)'). Always use standard Hindi spelling (e.g. 'घूमने' NOT 'घुमने')."
             )
         else:
             lang_directive = "LANGUAGE DIRECTIVE: Output all questions, options, and explanations in clear English."
@@ -727,12 +853,13 @@ class LLMService:
                 questions_dict: Dict[str, InternalQuestion] = {}
                 for idx, q in enumerate(deduped[:count], start=1):
                     qid = f"q_{idx}"
+                    sq = shuffle_question_options(q)
                     questions_dict[qid] = InternalQuestion(
                         id=qid,
-                        question=q.question.strip(),
-                        options=q.options,
-                        correct_option=q.correct_option,
-                        explanation=q.explanation.strip(),
+                        question=sq.question.strip(),
+                        options=sq.options,
+                        correct_option=sq.correct_option,
+                        explanation=sq.explanation.strip(),
                     )
 
                 if len(questions_dict) >= count:
@@ -825,16 +952,17 @@ class LLMService:
         import random
         random.shuffle(all_questions)
 
-        # Assemble and cleanly re-index all generated questions
+        # Assemble and cleanly re-index all generated questions with randomized option shuffling
         questions_dict: Dict[str, InternalQuestion] = {}
         for idx, q in enumerate(all_questions[:count], start=1):
             qid = f"q_{idx}"
+            sq = shuffle_question_options(q)
             questions_dict[qid] = InternalQuestion(
                 id=qid,
-                question=q.question.strip(),
-                options=q.options,
-                correct_option=q.correct_option,
-                explanation=q.explanation.strip(),
+                question=sq.question.strip(),
+                options=sq.options,
+                correct_option=sq.correct_option,
+                explanation=sq.explanation.strip(),
             )
 
         # If pool had fewer questions than count, fill remainder safely
@@ -870,12 +998,13 @@ class LLMService:
                                 break
                             if not is_duplicate_question(eq, list(questions_dict.values())):
                                 qid = f"q_{len(questions_dict) + 1}"
+                                sq = shuffle_question_options(eq)
                                 questions_dict[qid] = InternalQuestion(
                                     id=qid,
-                                    question=eq.question.strip(),
-                                    options=eq.options,
-                                    correct_option=eq.correct_option,
-                                    explanation=eq.explanation.strip(),
+                                    question=sq.question.strip(),
+                                    options=sq.options,
+                                    correct_option=sq.correct_option,
+                                    explanation=sq.explanation.strip(),
                                     is_mock=False,
                                 )
                 except Exception as e_fill_free:
@@ -898,12 +1027,13 @@ class LLMService:
                                 break
                             if not is_duplicate_question(eq, list(questions_dict.values())):
                                 qid = f"q_{len(questions_dict) + 1}"
+                                sq = shuffle_question_options(eq)
                                 questions_dict[qid] = InternalQuestion(
                                     id=qid,
-                                    question=eq.question.strip(),
-                                    options=eq.options,
-                                    correct_option=eq.correct_option,
-                                    explanation=eq.explanation.strip(),
+                                    question=sq.question.strip(),
+                                    options=sq.options,
+                                    correct_option=sq.correct_option,
+                                    explanation=sq.explanation.strip(),
                                     is_mock=False,
                                 )
                 except Exception as e_fill:
@@ -923,6 +1053,7 @@ class LLMService:
                         explanation=item["explanation"],
                         is_mock=True,
                     )
+                    candidate = shuffle_question_options(candidate)
                     if not is_duplicate_question(candidate, list(questions_dict.values())):
                         questions_dict[candidate.id] = candidate
 

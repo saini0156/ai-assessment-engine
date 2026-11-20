@@ -56,11 +56,13 @@ class PDFService:
 
     @staticmethod
     def sanitize_text(text: str) -> str:
-        """
+        r"""
         Sanitizes raw text:
         - Replaces non-breaking space with regular space
-        - Replaces multiple consecutive spaces/tabs with single space
         - Normalizes Windows CRLF to LF
+        - Replaces multiple consecutive spaces/tabs with single space
+        - Cleans unicode escape codes (\u{00E2}, \u00e2) and PDF ligature artifacts
+        - Fixes common Devanagari OCR/font corruptions (e.g. 'भचâड' -> 'भचक्र')
         - Replaces 3 or more consecutive newlines with two newlines
         """
         if not text:
@@ -68,6 +70,28 @@ class PDFService:
         text = text.replace('\xa0', ' ')
         text = text.replace('\r\n', '\n').replace('\r', '\n')
         text = re.sub(r'[ \t]+', ' ', text)
+
+        # 1. Decode literal ES6 escapes like \u{00E2} or \u{...}
+        def _decode_hex_brace(match):
+            try:
+                return chr(int(match.group(1), 16))
+            except Exception:
+                return ""
+        text = re.sub(r'\\u\{([0-9a-fA-F]+)\}', _decode_hex_brace, text)
+
+        # 2. Decode standard 4-digit \uXXXX if present as literal backslash-u
+        def _decode_hex4(match):
+            try:
+                return chr(int(match.group(1), 16))
+            except Exception:
+                return ""
+        text = re.sub(r'\\u([0-9a-fA-F]{4})', _decode_hex4, text)
+
+        # 3. Clean up common Hindi PDF ligature corruptions
+        text = re.sub(r'भच[â\u00e2\?]+ड?', 'भचक्र', text)
+        text = text.replace('â€™', "'").replace('â€œ', '"').replace('â€', '"')
+        text = text.replace('घुमने', 'घूमने')
+
         text = re.sub(r'\n{3,}', '\n\n', text)
         return text.strip()
 

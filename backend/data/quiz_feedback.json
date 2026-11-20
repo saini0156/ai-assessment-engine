@@ -46,5 +46,61 @@
     "review_text": "Option C translation has a typo",
     "user_id": "user-abc-456",
     "created_at": "2026-11-20T05:08:22.085576"
+  },
+  {
+    "id": "a497168f-44d9-4cc3-9d94-92eb78292608",
+    "quiz_session_id": "test-session-123",
+    "question_id": "q_1",
+    "review_text": "Option C translation has a typo",
+    "user_id": "user-abc-456",
+    "created_at": "2026-11-20T05:27:29.607860"
+  },
+  {
+    "id": "726268b1-bcdf-46c2-b087-ec70d0044d6c",
+    "quiz_session_id": "test-session-123",
+    "question_id": "q_1",
+    "review_text": "Option C translation has a typo",
+    "user_id": "user-abc-456",
+    "created_at": "2026-11-20T05:35:05.737128"
+  },
+  {
+    "id": "30e02cd9-515b-4373-a245-8ef6e22a978f",
+    "quiz_session_id": "test-session-123",
+    "question_id": "q_1",
+    "review_text": "Option C translation has a typo",
+    "user_id": "user-abc-456",
+    "created_at": "2026-11-20T05:49:24.763684"
+  },
+  {
+    "id": "24689ebe-dc35-4ce8-ba20-6b590e7d9147",
+    "quiz_session_id": "test-session-123",
+    "question_id": "q_1",
+    "review_text": "Option C translation has a typo",
+    "user_id": "user-abc-456",
+    "created_at": "2026-11-20T05:50:11.254520"
+  },
+  {
+    "id": "6ece45ee-15e8-4e41-a384-ec2f53a715e8",
+    "quiz_session_id": "test-session-123",
+    "question_id": "q_1",
+    "review_text": "Option C translation has a typo",
+    "user_id": "user-abc-456",
+    "created_at": "2026-11-20T05:51:15.538389"
+  },
+  {
+    "id": "d7f0e586-37dd-4a2c-ace0-911661105567",
+    "quiz_session_id": "test-session-123",
+    "question_id": "q_1",
+    "review_text": "Option C translation has a typo",
+    "user_id": "user-abc-456",
+    "created_at": "2026-11-20T06:05:18.058167"
+  },
+  {
+    "id": "441b1428-0309-4f08-a275-e28878e6c3b3",
+    "quiz_session_id": "test-session-123",
+    "question_id": "q_1",
+    "review_text": "Option C translation has a typo",
+    "user_id": "user-abc-456",
+    "created_at": "2026-11-20T06:05:38.187558"
   }
 ]
