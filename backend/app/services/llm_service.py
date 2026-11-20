@@ -431,10 +431,11 @@ class LLMService:
         messages.append({"role": "user", "content": user_prompt})
 
         # High-speed active Groq model list (Active 2026 Production Tier)
+        # qwen/qwen3.8-27b has 0 reasoning latency, instant JSON output (<2s), and stellar Hindi/Math support
         models_to_try = [
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b",
             "qwen/qwen3.8-27b",
+            "openai/gpt-oss-20b",
+            "openai/gpt-oss-120b",
         ]
 
         last_error = None
@@ -466,7 +467,18 @@ class LLMService:
                         continue  # Try next API key
 
                     resp.raise_for_status()
-                    content = resp.json()["choices"][0]["message"]["content"]
+                    res_json = resp.json()
+                    choice = res_json.get("choices", [{}])[0]
+                    msg = choice.get("message", {})
+                    content = msg.get("content") or ""
+
+                    # Fallback to reasoning field if model placed output in reasoning
+                    if not content.strip() and msg.get("reasoning"):
+                        content = msg.get("reasoning") or ""
+
+                    if not content.strip():
+                        raise ValueError(f"Model {model_candidate} returned empty content")
+
                     parsed = sanitize_and_parse_json(content)
 
                     # Unpack wrapped lists if nested under keys like {'questions': [...]} or {'topics': [...]}
@@ -478,6 +490,10 @@ class LLMService:
                 except Exception as e:
                     last_error = e
                     logger.warning("Groq candidate %s with key %s failed: %s", model_candidate, masked, e)
+                    # If model returned empty or invalid JSON, it is a model issue, not a key issue.
+                    # Switch immediately to next model instead of retrying all keys uselessly.
+                    if isinstance(e, (ValueError, json.JSONDecodeError)):
+                        break
                     continue
 
         raise RuntimeError(f"All Groq keys and models failed. Last error: {last_error}")
@@ -553,6 +569,8 @@ class LLMService:
                 except Exception as e_rest:
                     last_error = e_rest
                     logger.warning("Gemini REST model %s on key %s failed: %s", gemini_model, masked, e_rest)
+                    if isinstance(e_rest, (ValueError, json.JSONDecodeError)):
+                        break
                     continue
 
         raise RuntimeError(f"All Gemini models and keys failed. Last error: {last_error}")
