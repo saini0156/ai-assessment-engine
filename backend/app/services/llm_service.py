@@ -387,7 +387,7 @@ class LLMService:
         self.gemini_keys = settings.GEMINI_API_KEYS
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
         self._groq_client = httpx.Client(
-            timeout=25.0,
+            timeout=45.0,
             limits=httpx.Limits(max_keepalive_connections=20, max_connections=50)
         )
         logger.info(
@@ -421,10 +421,11 @@ class LLMService:
 
         # High-speed active Groq model list prioritized by response latency and account availability
         models_to_try = [
-            "llama-3.3-70b-versatile",   # Standard fast versatile model (~0.8s)
-            "llama-3.1-8b-instant",      # Ultra fast fallback
-            "gemma2-9b-it",              # Reliable alternative
-            "mixtral-8x7b-32768",        # High capacity fallback
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "deepseek-r1-distill-llama-70b",
+            "gemma2-9b-it",
+            "mixtral-8x7b-32768",
         ]
 
         last_error = None
@@ -444,6 +445,12 @@ class LLMService:
                         "max_tokens": 2048,
                     }
                     resp = self._groq_client.post(url, json=payload, headers=headers)
+                    if resp.status_code == 400 and "response_format" in payload:
+                        # Some models (e.g. gemma2, mixtral) do not support response_format="json_object"
+                        # Retry without response_format since prompt already enforces JSON format
+                        del payload["response_format"]
+                        resp = self._groq_client.post(url, json=payload, headers=headers)
+
                     if resp.status_code == 429:
                         logger.warning("Groq 429 Rate Limit hit on key %s. Rotating to next key...", masked)
                         break  # Try next API key
@@ -473,7 +480,7 @@ class LLMService:
             raise RuntimeError("No Gemini API keys configured.")
 
         last_error = None
-        gemini_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]
+        gemini_models = ["gemini-flash-latest", "gemini-2.0-flash", "gemini-1.5-flash"]
 
         for api_key in keys_to_try:
             masked = f"...{api_key[-4:]}" if len(api_key) >= 4 else "key"
@@ -492,7 +499,7 @@ class LLMService:
                             "temperature": temperature,
                         }
                     }
-                    resp = self._groq_client.post(url, json=payload, headers=headers, timeout=25.0)
+                    resp = self._groq_client.post(url, json=payload, headers=headers, timeout=45.0)
                     if resp.status_code == 429:
                         logger.warning("Gemini 429 rate limit hit on key %s. Rotating to next key...", masked)
                         break
