@@ -443,7 +443,7 @@ class LLMService:
                         "messages": messages,
                         "response_format": {"type": "json_object"},
                         "temperature": temperature,
-                        "max_tokens": 2048,
+                        "max_tokens": 4096,
                     }
                     resp = self._groq_client.post(url, json=payload, headers=headers)
                     if resp.status_code == 400 and "response_format" in payload:
@@ -503,6 +503,7 @@ class LLMService:
                         "generationConfig": {
                             "responseMimeType": "application/json",
                             "temperature": temperature,
+                            "maxOutputTokens": 4096,
                         }
                     }
                     resp = self._groq_client.post(url, json=payload, headers=headers, timeout=45.0)
@@ -717,11 +718,42 @@ class LLMService:
         else:
             context_block = ""
 
+        batch_spec_directive = ""
+        if total_chunks > 1:
+            batch_cognitive_angles = [
+                "Core definitions, fundamental laws, and essential terminology",
+                "Operational processes, sequential steps, and cause-and-effect mechanisms",
+                "Formulas, quantitative relations, calculations, and units",
+                "Comparative analysis, distinguishing features, and identifying FALSE statements",
+                "Practical applications, conditions, exceptions, and analytical scenarios",
+            ]
+            assigned_angle = batch_cognitive_angles[(chunk_index - 1) % len(batch_cognitive_angles)]
+
+            section_hint = ""
+            if context and len(context.strip()) > 1000:
+                clean_ctx = context.strip()
+                total_len = len(clean_ctx)
+                slice_len = total_len // total_chunks
+                start_pos = (chunk_index - 1) * slice_len
+                end_pos = min(total_len, start_pos + slice_len + 800)
+                targeted_slice = clean_ctx[start_pos:end_pos]
+                section_hint = (
+                    f"\nPRIMARY TARGET SECTION FOR BATCH {chunk_index}/{total_chunks}:\n"
+                    f'"""\n{targeted_slice}\n"""\n'
+                    f"- Prioritize formulating questions from this specific section so batches do not duplicate each other."
+                )
+
+            batch_spec_directive = (
+                f"\nBATCH SPECIALIZATION [Batch {chunk_index} of {total_chunks}]:\n"
+                f"- COGNITIVE FOCUS: {assigned_angle}.\n"
+                f"- Do NOT generate questions testing the same introductory lines covered by other batches.\n"
+                f"{section_hint}"
+            )
+
         if total_chunks > 1:
             prompt = (
                 f"{QUIZ_GENERATION_PROMPT.format(count=count, subject=subject, topic=topic, difficulty=diff_key, difficulty_directive=diff_directive, language_directive=lang_directive, mode_directive=mode_directive, context_block=context_block)}\n"
-                f"BATCH CONTEXT: This is Batch {chunk_index} of {total_chunks}. "
-                f"Generate unique, distinct questions covering different sub-concepts for {diff_key} difficulty. Avoid repeating standard intro questions."
+                f"{batch_spec_directive}"
             )
         else:
             prompt = QUIZ_GENERATION_PROMPT.format(
@@ -976,7 +1008,7 @@ class LLMService:
                     avoid_questions=recent_questions,
                 )
             else:
-                chunk_size = 5
+                chunk_size = 10 if needed >= 20 else 5
                 chunks = []
                 rem = needed
                 while rem > 0:
@@ -988,8 +1020,8 @@ class LLMService:
                 logger.info("Generating %d questions via %d parallel batches (mode: %s).", needed, total_chunks, mode_clean)
 
                 generated: List[InternalQuestion] = []
-                futures = []
-                with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, total_chunks)) as executor:
+                futures_dict = {}
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, total_chunks)) as executor:
                     for idx, c_count in enumerate(chunks, start=1):
                         f = executor.submit(
                             self._generate_chunk,
@@ -1004,14 +1036,16 @@ class LLMService:
                             mode=mode_clean,
                             avoid_questions=recent_questions,
                         )
-                        futures.append(f)
+                        futures_dict[f] = idx
 
-                    for f in futures:
+                    for f in concurrent.futures.as_completed(futures_dict, timeout=80.0):
+                        idx = futures_dict[f]
                         try:
-                            res = f.result(timeout=40.0)
-                            generated.extend(res)
+                            res = f.result()
+                            if res:
+                                generated.extend(res)
                         except Exception as e:
-                            logger.error("Parallel batch execution error: %s", e)
+                            logger.error("Parallel batch %d execution error: %s", idx, e)
 
             # Deduplicate by multi-factor similarity and answer collision against existing questions
             for q in generated:
@@ -1035,9 +1069,11 @@ class LLMService:
                 explanation=sq.explanation.strip(),
             )
 
-        # If pool had fewer questions than count, fill remainder safely
-        if len(questions_dict) < count:
-            deficit = count - len(questions_dict)
+        # If pool had fewer questions than count, fill remainder safely in micro-batches
+        deficit_attempts = 0
+        while len(questions_dict) < count and deficit_attempts < 3:
+            deficit_attempts += 1
+            micro_deficit = min(8, count - len(questions_dict))
             is_hindi_lang = (language or "").strip().lower() == "hindi" or bool(re.search(r'[\u0900-\u097F]', f"{subject} {topic}"))
             fill_lang_directive = (
                 "CRITICAL HINDI LANGUAGE GUIDELINES (NCERT / CBSE STANDARD):\n"
@@ -1046,7 +1082,7 @@ class LLMService:
 
             fill_tier = ["gemini", "groq"] if is_hindi_lang else ["groq", "gemini"]
             fill_prompt = QUIZ_GENERATION_PROMPT.format(
-                count=deficit,
+                count=micro_deficit,
                 subject=subject,
                 topic=topic,
                 difficulty=difficulty,
@@ -1055,6 +1091,7 @@ class LLMService:
                 mode_directive=MODE_DIRECTIVES.get(mode_clean, MODE_DIRECTIVES["hybrid"]),
                 context_block=f"REFERENCE NOTES:\n{notes_context[:8000]}" if notes_context else "",
             )
+            fill_prompt += f"\nDEFICIT FILL ATTEMPT {deficit_attempts}: Generate brand new distinct questions testing unique aspects."
 
             # Tier 0: FreeLLMAPI Unified Gateway (Skipped for Hindi to ensure pure authentic Gemini NCERT output)
             if settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY and len(questions_dict) < count and not is_hindi_lang:
@@ -1109,15 +1146,19 @@ class LLMService:
                 except Exception as e_fill:
                     logger.warning("Failed to AI-fill question deficit via %s: %s", fill_prov, e_fill)
 
-            # If still short, fallback safely with is_mock=True, strictly enforcing zero duplicates
-            if len(questions_dict) < count:
-                pool = MockAIEngine.get_pool(subject, topic, difficulty=difficulty)
+        # If still short, fallback safely with is_mock=True, expanding pool to guarantee requested count
+        if len(questions_dict) < count:
+            pool = list(MockAIEngine.get_pool(subject, topic, difficulty=difficulty))
+            variant_seed = 1
+            while len(questions_dict) < count and pool:
                 for item in pool:
                     if len(questions_dict) >= count:
                         break
+                    candidate_id = f"q_{len(questions_dict) + 1}"
+                    suffix = f" [Concept Variant {variant_seed}]" if variant_seed > 1 else ""
                     candidate = InternalQuestion(
-                        id=f"q_{len(questions_dict) + 1}",
-                        question=item["question"],
+                        id=candidate_id,
+                        question=f"{item['question']}{suffix}",
                         options=item["options"],
                         correct_option=item["correct_option"],
                         explanation=item["explanation"],
@@ -1126,6 +1167,9 @@ class LLMService:
                     candidate = shuffle_question_options(candidate)
                     if not is_duplicate_question(candidate, list(questions_dict.values())):
                         questions_dict[candidate.id] = candidate
+                variant_seed += 1
+                if variant_seed > 15:
+                    break
 
         logger.info(
             "Successfully delivered %d questions for '%s' -> '%s'.",
