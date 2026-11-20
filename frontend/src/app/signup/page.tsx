@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Loader2, Lock, Mail, User } from "lucide-react";
@@ -10,6 +10,12 @@ import { AuthShell } from "@/components/auth/AuthShell";
 import { AuthField } from "@/components/auth/AuthField";
 import { GoogleButton } from "@/components/auth/GoogleButton";
 
+// Where to go after signing up: ?redirect=/quiz/new, but only for paths inside the site
+function getRedirectTarget(): string {
+  const target = new URLSearchParams(window.location.search).get("redirect");
+  return target && target.startsWith("/") && !target.startsWith("//") ? target : "/";
+}
+
 export default function SignupPage() {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -18,6 +24,15 @@ export default function SignupPage() {
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [redirect, setRedirect] = useState("/");
+
+  // Read the redirect after the page loads (window isn't available on the server)
+  useEffect(() => {
+    setRedirect(getRedirectTarget());
+  }, []);
+
+  const loginHref =
+    redirect === "/" ? "/login" : `/login?redirect=${encodeURIComponent(redirect)}`;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,7 +55,7 @@ export default function SignupPage() {
         password,
       });
       saveSession(data);
-      router.push("/");
+      router.push(redirect);
     } catch (err: any) {
       setError(err.message || "Could not create your account. Please try again.");
       setLoading(false);
@@ -54,13 +69,13 @@ export default function SignupPage() {
       try {
         const data = await apiClient.googleLogin(credential);
         saveSession(data);
-        router.push("/");
+        router.push(redirect);
       } catch (err: any) {
         setError(err.message || "Google sign-in failed. Please try again.");
         setLoading(false);
       }
     },
-    [router]
+    [router, redirect]
   );
 
   return (
@@ -158,7 +173,7 @@ export default function SignupPage() {
 
         <p className="text-center text-sm text-stone-600">
           Already have an account?{" "}
-          <Link href="/login" className="font-bold text-black hover:underline">
+          <Link href={loginHref} className="font-bold text-black hover:underline">
             Log in
           </Link>
         </p>

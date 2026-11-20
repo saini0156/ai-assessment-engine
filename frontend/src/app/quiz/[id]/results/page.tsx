@@ -240,18 +240,41 @@ export default function QuizResultsPage({ params }: { params: Promise<{ id: stri
               </div>
 
               {/* Answer comparison */}
+                            {/* Answer comparison */}
               <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+                {/* Your choice */}
                 <div
-                  className={`rounded-xl border px-3.5 py-2.5 ${rev.is_correct
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                    : "border-red-200 bg-red-50 text-red-900"
-                    }`}
+                  className={`rounded-xl border p-3.5 ${
+                    rev.is_correct
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+                      : "border-red-200 bg-red-50 text-red-950"
+                  }`}
                 >
-                  <span className="font-bold">Your choice: </span>
-                  {rev.selected_option ? `Option ${rev.selected_option}` : "Not answered"}
+                  <div
+                    className={`text-xs font-bold uppercase ${
+                      rev.is_correct ? "text-emerald-800" : "text-red-800"
+                    }`}
+                  >
+                    Your choice:{" "}
+                    {rev.selected_option ? `Option ${rev.selected_option}` : "Not answered"}
+                  </div>
+                  {rev.selected_option_text && (
+                    <div className="mt-1.5 font-medium leading-snug text-stone-900">
+                      <MathText text={rev.selected_option_text} />
+                    </div>
+                  )}
                 </div>
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-emerald-900">
-                  <span className="font-bold">Correct: </span>Option {rev.correct_option}
+
+                {/* Correct answer */}
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-emerald-950">
+                  <div className="text-xs font-bold uppercase text-emerald-800">
+                    Correct: Option {rev.correct_option}
+                  </div>
+                  {rev.correct_option_text && (
+                    <div className="mt-1.5 font-medium leading-snug text-stone-900">
+                      <MathText text={rev.correct_option_text} />
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -29,31 +29,30 @@ const MODES: {
   label: string;
   hint: string;
 }[] = [
-  {
-    id: "notes",
-    label: "Notes",
-    hint: "Generate questions using your uploaded syllabus notes.",
-  },
-  {
-    id: "hybrid",
-    label: "Hybrid",
-    hint: "Combine your syllabus notes with AI-generated questions.",
-  },
-  {
-    id: "ai",
-    label: "AI",
-    hint: "Generate questions using AI.",
-  },
-];
+    {
+      id: "notes",
+      label: "Notes",
+      hint: "Generate questions using your uploaded syllabus notes.",
+    },
+    {
+      id: "hybrid",
+      label: "Hybrid",
+      hint: "Combine your syllabus notes with AI-generated questions.",
+    },
+    {
+      id: "ai",
+      label: "AI",
+      hint: "Generate questions using AI.",
+    },
+  ];
 
 const inputClass =
   "w-full rounded-md border border-stone-300 bg-white py-3 pl-11 pr-4 text-base text-stone-900 placeholder:text-stone-400 transition focus:border-black focus:outline-none focus:ring-1 focus:ring-black";
 
 const optionClass = (selected: boolean) =>
-  `rounded-md border py-2.5 lg:py-2 text-sm font-semibold transition ${
-    selected
-      ? "border-black bg-black text-white"
-      : "border-stone-300 bg-white text-stone-700 hover:border-stone-500"
+  `rounded-md border py-2.5 lg:py-2 text-sm font-semibold transition ${selected
+    ? "border-black bg-black text-white"
+    : "border-stone-300 bg-white text-stone-700 hover:border-stone-500"
   }`;
 
 type SubjectEntry = {
@@ -198,9 +197,8 @@ function Dropdown({
       </button>
 
       <ChevronDown
-        className={`pointer-events-none absolute right-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-400 transition-transform ${
-          open ? "rotate-180" : ""
-        }`}
+        className={`pointer-events-none absolute right-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-400 transition-transform ${open ? "rotate-180" : ""
+          }`}
       />
 
       {open && (
@@ -218,9 +216,8 @@ function Dropdown({
               onMouseEnter={() => setActive(i)}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => select(opt)}
-              className={`flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm text-stone-800 sm:py-2.5 ${
-                i === active ? "bg-stone-100" : ""
-              } ${opt === value ? "font-semibold" : ""}`}
+              className={`flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm text-stone-800 sm:py-2.5 ${i === active ? "bg-stone-100" : ""
+                } ${opt === value ? "font-semibold" : ""}`}
             >
               <span className="truncate">{opt}</span>
 
@@ -601,15 +598,30 @@ function QuizConfigForm() {
               id="login-modal-title"
               className="text-2xl font-extrabold tracking-tight text-stone-900"
             >
-              Login Required
+              Your quiz is ready to build
             </h2>
 
-            {/* Description */}
+            {/* Persuasive line */}
             <p className="mt-3 text-sm leading-relaxed text-stone-600">
-              Please log in to your MindMark account before generating your
-              quiz. Your quiz attempts and results will be saved to your
-              account.
+              Log in to start. It takes less than a minute, and every quiz you
+              take counts toward your progress.
             </p>
+
+            {/* Benefits */}
+            <ul className="mx-auto mt-5 max-w-xs space-y-2.5 text-left text-sm text-stone-700">
+              {[
+                "Every score saved to your quiz history",
+                "AI tutor explains each mistake",
+                "See your progress improve over time",
+              ].map((b) => (
+                <li key={b} className="flex items-start gap-2.5">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-black text-white">
+                    <Check className="h-3 w-3" strokeWidth={3} />
+                  </span>
+                  {b}
+                </li>
+              ))}
+            </ul>
 
             {/* Login button */}
             <button
@@ -618,17 +630,19 @@ function QuizConfigForm() {
               className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-black px-5 py-3.5 text-sm font-bold text-white transition hover:bg-stone-800"
             >
               <LockKeyhole className="h-4 w-4" />
-              Go to Login
+              Log in to continue
             </button>
 
-            {/* Cancel button */}
-            <button
-              type="button"
-              onClick={() => setShowLoginModal(false)}
-              className="mt-3 w-full rounded-xl border border-stone-200 px-5 py-3 text-sm font-semibold text-stone-600 transition hover:bg-stone-50"
-            >
-              Maybe Later
-            </button>
+            {/* Sign up link */}
+            <p className="mt-4 text-sm text-stone-600">
+              New to MindMark?{" "}
+              <Link
+                href="/signup?redirect=/quiz/new"
+                className="font-bold text-black hover:underline"
+              >
+                Create a free account
+              </Link>
+            </p>
           </div>
         </div>
       )}
