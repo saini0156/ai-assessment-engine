@@ -519,7 +519,7 @@ class LLMService:
                             "maxOutputTokens": 4096,
                         }
                     }
-                    resp = self._groq_client.post(url, json=payload, headers=headers, timeout=45.0)
+                    resp = self._groq_client.post(url, json=payload, headers=headers, timeout=12.0)
 
                     if resp.status_code == 404:
                         logger.warning("Gemini model %s returned 404 Not Found. Marking dead and skipping remaining keys.", gemini_model)
@@ -533,7 +533,7 @@ class LLMService:
                     if resp.status_code == 503:
                         logger.warning("Gemini REST model %s on key %s overloaded (503). Retrying in 1.5s...", gemini_model, masked)
                         time.sleep(1.5)
-                        resp = self._groq_client.post(url, json=payload, headers=headers, timeout=45.0)
+                        resp = self._groq_client.post(url, json=payload, headers=headers, timeout=12.0)
                         if resp.status_code == 503:
                             continue  # Try next key on persistent 503
 
@@ -634,7 +634,7 @@ class LLMService:
             except Exception as e_free:
                 logger.warning("FreeLLMAPI topic extraction failed (%s). Continuing direct fallback...", e_free)
 
-        tier_order = ["gemini", "groq"] if is_hindi else ["groq", "gemini"]
+        tier_order = ["groq", "gemini"]
         for provider in tier_order:
             if provider == "groq" and self.groq_pool.total_keys() > 0:
                 try:
@@ -824,7 +824,7 @@ class LLMService:
         # Smart Language-Based Routing:
         # Hindi -> Gemini 1st (Flawless NCERT Hindi), Groq 2nd fallback
         # English -> Groq 1st (0.9s ultra-speed), Gemini 2nd fallback
-        tier_order = ["gemini", "groq"] if is_hindi else ["groq", "gemini"]
+        tier_order = ["groq", "gemini"]
 
         for provider in tier_order:
             if provider == "groq" and self.groq_pool.total_keys() > 0:
@@ -1059,14 +1059,19 @@ class LLMService:
                         )
                         futures_dict[f] = idx
 
-                    for f in concurrent.futures.as_completed(futures_dict, timeout=80.0):
-                        idx = futures_dict[f]
-                        try:
-                            res = f.result()
-                            if res:
-                                generated.extend(res)
-                        except Exception as e:
-                            logger.exception("Parallel batch %d execution error: %r", idx, e)
+                    try:
+                        for f in concurrent.futures.as_completed(futures_dict, timeout=45.0):
+                            idx = futures_dict[f]
+                            try:
+                                res = f.result()
+                                if res:
+                                    generated.extend(res)
+                            except Exception as e:
+                                logger.exception("Parallel batch %d execution error: %r", idx, e)
+                    except TimeoutError as te:
+                        logger.warning("Parallel batch execution reached timeout (%r). Using generated questions + offline safety net.", te)
+                    except Exception as e_all:
+                        logger.exception("Parallel batch collector error: %r", e_all)
 
             # Deduplicate by multi-factor similarity and answer collision against existing questions
             for q in generated:
@@ -1250,7 +1255,7 @@ class LLMService:
         # Smart Language Routing for AI Tutor:
         # Hindi -> Gemini 1st (Empathetic, authentic Hindi tutoring), Groq 2nd fallback
         # English -> Groq 1st, Gemini 2nd fallback
-        tier_order = ["gemini", "groq"] if is_hindi else ["groq", "gemini"]
+        tier_order = ["groq", "gemini"]
 
         for provider in tier_order:
             if provider == "groq" and self.groq_pool.total_keys() > 0:
