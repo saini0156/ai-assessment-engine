@@ -18,12 +18,19 @@ else:
     connect_args = {"check_same_thread": False, "timeout": 20}
 
 # Create database engine
-engine = create_engine(
-    db_url,
-    echo=settings.DB_ECHO,
-    connect_args=connect_args,
-    pool_pre_ping=not is_sqlite,
-)
+engine_kwargs = {
+    "echo": settings.DB_ECHO,
+    "connect_args": connect_args,
+    "pool_pre_ping": not is_sqlite,
+}
+if not is_sqlite:
+    engine_kwargs.update({
+        "pool_size": 20,
+        "max_overflow": 30,
+        "pool_timeout": 30,
+    })
+
+engine = create_engine(db_url, **engine_kwargs)
 
 
 # Create database session factory
