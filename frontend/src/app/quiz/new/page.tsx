@@ -19,7 +19,7 @@ import {
   X,
 } from "lucide-react";
 
-const COUNTS = [10, 30 , 50];
+const COUNTS = [10, 15, 20];
 const LEVELS = ["Easy", "Medium", "Hard"];
 
 type QuizMode = "notes" | "hybrid" | "ai";
