@@ -105,3 +105,18 @@ def update_user_role(
         is_active=updated_user.is_active,
         created_at=str(updated_user.created_at) if updated_user.created_at else None,
     )
+
+
+@router.get(
+    "/feedback",
+    response_model=List[dict],
+    summary="List all question feedback entries (Admin Only)",
+)
+def list_admin_feedback(
+    limit: int = 100,
+    current_admin: User = Depends(get_current_admin),
+):
+    """Admin view: Retrieve question feedbacks across all quizzes."""
+    if not db_service:
+        return []
+    return db_service.get_all_feedback(limit=limit)

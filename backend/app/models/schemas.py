@@ -1,6 +1,6 @@
 import re
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
-from typing import List, Dict, Optional, Any, Literal
+from typing import List, Dict, Optional, Any, Literal, Union
 
 # =========================================================================
 # --- 1. Syllabus Models (Worst-Case Protected) ---
@@ -158,8 +158,11 @@ class QuizSubmitRequest(BaseModel):
 class QuestionReview(BaseModel):
     question_id: str
     question: str
+    options: Dict[str, str] = Field(default_factory=dict)
     selected_option: Optional[str]
+    selected_option_text: Optional[str] = None
     correct_option: str
+    correct_option_text: Optional[str] = None
     is_correct: bool
     explanation: str
 
@@ -328,5 +331,4 @@ class QuizFeedbackCreate(BaseModel):
     review_text: str = Field(
         ..., min_length=1, max_length=2000,
         description="Free‑form comment about the question/option wording, difficulty, etc.")
-    # optional – only used when authentication is enabled
-    user_id: Optional[int] = None
+    user_id: Optional[Union[str, int]] = None
