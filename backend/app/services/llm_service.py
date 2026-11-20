@@ -2,6 +2,7 @@ import concurrent.futures
 import itertools
 import json
 import logging
+import random
 import re
 import threading
 import uuid
@@ -25,6 +26,24 @@ from app.prompts.templates import (
 )
 
 logger = logging.getLogger(__name__)
+
+TOPIC_LIST_ADAPTER = TypeAdapter(List[TopicItem])
+
+
+def parse_topics_data(data: Any) -> List[TopicItem]:
+    """
+    Safely parses topics from LLM responses whether returned as:
+      - Direct list: [{"topic_id": "top_1", ...}]
+      - Dict wrapping list: {"topics": [...]}, {"topic_list": [...]}, etc.
+    """
+    if isinstance(data, dict):
+        for val in data.values():
+            if isinstance(val, list):
+                data = val
+                break
+    if not isinstance(data, list):
+        data = []
+    return TOPIC_LIST_ADAPTER.validate_python(data)
 
 def clean_math_text(s: str) -> str:
     """
@@ -202,6 +221,26 @@ def normalize_ai_question(item: Any, idx: int) -> Optional[InternalQuestion]:
     )
 
 
+def _parse_generated(raw_data: Any) -> List[InternalQuestion]:
+    """
+    Parses LLM output (list or wrapped dict) into a list of normalized InternalQuestion objects.
+    Accessible globally throughout LLMService.
+    """
+    if isinstance(raw_data, list):
+        items = raw_data
+    elif isinstance(raw_data, dict):
+        items = next((v for v in raw_data.values() if isinstance(v, list)), [])
+    else:
+        items = []
+
+    results = []
+    for i, raw_item in enumerate(items, start=1):
+        q = normalize_ai_question(raw_item, i)
+        if q:
+            results.append(q)
+    return results
+
+
 def shuffle_question_options(q: InternalQuestion) -> InternalQuestion:
     """
     Shuffles options (A, B, C, D) randomly for any question (Bank, AI, or Mock)
@@ -360,7 +399,7 @@ class LLMService:
     # -------------------------------------------------------------
     # Groq API Caller with Multi-Key Rotation & 429 Failover
     # -------------------------------------------------------------
-    def _call_groq(self, prompt: str, system_message: str = "") -> Any:
+    def _call_groq(self, prompt: str, system_message: str = "", temperature: float = 0.7) -> Any:
         keys_to_try = list(self.groq_pool.keys)
         if not keys_to_try:
             raise RuntimeError("No Groq API keys configured.")
@@ -382,11 +421,10 @@ class LLMService:
 
         # High-speed active Groq model list prioritized by response latency and account availability
         models_to_try = [
-            "qwen/qwen3.8-27b",          # Verified active on account (~0.9s response)
-            "openai/gpt-oss-20b",        # Verified active on account (~1.2s response)
-            "openai/gpt-oss-120b",       # High capacity fallback
-            "llama-3.3-70b-versatile",   # Standard cloud fallback
-            "llama-3.1-8b-instant",      # Standard cloud fallback
+            "llama-3.3-70b-versatile",   # Standard fast versatile model (~0.8s)
+            "llama-3.1-8b-instant",      # Ultra fast fallback
+            "gemma2-9b-it",              # Reliable alternative
+            "mixtral-8x7b-32768",        # High capacity fallback
         ]
 
         last_error = None
@@ -402,7 +440,7 @@ class LLMService:
                         "model": model_candidate,
                         "messages": messages,
                         "response_format": {"type": "json_object"},
-                        "temperature": 0.1,
+                        "temperature": temperature,
                         "max_tokens": 2048,
                     }
                     resp = self._groq_client.post(url, json=payload, headers=headers)
@@ -429,26 +467,32 @@ class LLMService:
     # -------------------------------------------------------------
     # High-Performance Gemini API Caller (Direct REST + SDK Fallback)
     # -------------------------------------------------------------
-    def _call_gemini(self, prompt: str) -> Any:
+    def _call_gemini(self, prompt: str, temperature: float = 0.7) -> Any:
         keys_to_try = list(self.gemini_keys)
         if not keys_to_try:
             raise RuntimeError("No Gemini API keys configured.")
 
         last_error = None
+        gemini_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]
+
         for api_key in keys_to_try:
             masked = f"...{api_key[-4:]}" if len(api_key) >= 4 else "key"
-            for gemini_model in ["gemini-2.0-flash", "gemini-1.5-flash"]:
-                # 1. Primary: Direct Fast REST API via httpx (No SDK dependency, universal key format support)
+            for gemini_model in gemini_models:
+                # 1. Primary: Direct Fast REST API via httpx using official x-goog-api-key header
                 try:
                     url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={api_key}"
+                    headers = {
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": api_key,
+                    }
                     payload = {
                         "contents": [{"parts": [{"text": prompt}]}],
                         "generationConfig": {
                             "responseMimeType": "application/json",
-                            "temperature": 0.1,
+                            "temperature": temperature,
                         }
                     }
-                    resp = self._groq_client.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=25.0)
+                    resp = self._groq_client.post(url, json=payload, headers=headers, timeout=25.0)
                     if resp.status_code == 429:
                         logger.warning("Gemini 429 rate limit hit on key %s. Rotating to next key...", masked)
                         break
@@ -469,10 +513,10 @@ class LLMService:
                     last_error = e_rest
                     logger.warning("Gemini REST model %s on key %s failed: %s", gemini_model, masked, e_rest)
 
-                # 2. Secondary: google-genai SDK if installed
+                # 2. Secondary: google-genai SDK with v1beta forced
                 try:
                     from google import genai
-                    client = genai.Client(api_key=api_key)
+                    client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
                     def _execute():
                         return client.models.generate_content(
                             model=gemini_model,
@@ -497,7 +541,7 @@ class LLMService:
     # -------------------------------------------------------------
     # FreeLLMAPI Unified Gateway Caller (14-Key Pool with Failover)
     # -------------------------------------------------------------
-    def _call_freellmapi(self, prompt: str, model: str = "auto", system_message: str = "") -> Any:
+    def _call_freellmapi(self, prompt: str, model: str = "auto", system_message: str = "", temperature: float = 0.7) -> Any:
         if not settings.FREELLMAPI_URL or not settings.FREELLMAPI_KEY:
             raise RuntimeError("FreeLLMAPI is not configured.")
 
@@ -519,7 +563,7 @@ class LLMService:
             "model": model,
             "messages": messages,
             "response_format": {"type": "json_object"},
-            "temperature": 0.1,
+            "temperature": temperature,
         }
 
         resp = self._groq_client.post(url, json=payload, headers=headers, timeout=25.0)
@@ -562,8 +606,9 @@ class LLMService:
                     prompt,
                     model=target_model,
                     system_message="You are a syllabus parser that strictly outputs a JSON object containing a topics list.",
+                    temperature=0.2,
                 )
-                topics = TOPIC_LIST_ADAPTER.validate_python(data)
+                topics = parse_topics_data(data)
                 if len(topics) >= 1:
                     logger.info("Successfully extracted %d topics via FreeLLMAPI (%s).", len(topics), target_model)
                     return topics
@@ -577,8 +622,9 @@ class LLMService:
                     data = self._call_groq(
                         prompt,
                         system_message="You are a syllabus parser that strictly outputs a JSON object containing a topics list.",
+                        temperature=0.2,
                     )
-                    topics = TOPIC_LIST_ADAPTER.validate_python(data)
+                    topics = parse_topics_data(data)
                     if len(topics) >= 1:
                         logger.info("Successfully extracted %d topics via Groq (%s).", len(topics), "Fallback" if is_hindi else "Primary")
                         return topics
@@ -587,8 +633,8 @@ class LLMService:
 
             elif provider == "gemini" and len(self.gemini_keys) > 0:
                 try:
-                    data = self._call_gemini(prompt)
-                    topics = TOPIC_LIST_ADAPTER.validate_python(data)
+                    data = self._call_gemini(prompt, temperature=0.2)
+                    topics = parse_topics_data(data)
                     if len(topics) >= 1:
                         logger.info("Successfully extracted %d topics via Gemini (%s).", len(topics), "Primary" if is_hindi else "Fallback")
                         return topics
@@ -612,6 +658,7 @@ class LLMService:
         language: str = "Auto",
         context: Optional[str] = None,
         mode: str = "hybrid",
+        avoid_questions: Optional[List[str]] = None,
     ) -> List[InternalQuestion]:
         """Generates a slice of questions with context to avoid duplicate questions."""
         diff_key = difficulty.strip().capitalize() if difficulty else "Medium"
@@ -691,20 +738,21 @@ class LLMService:
                 context_block=context_block,
             )
 
-        def _parse_generated(raw_data: Any) -> List[InternalQuestion]:
-            if isinstance(raw_data, list):
-                items = raw_data
-            elif isinstance(raw_data, dict):
-                items = next((v for v in raw_data.values() if isinstance(v, list)), [])
-            else:
-                items = []
+        session_seed = uuid.uuid4().hex[:8]
+        prompt += (
+            f"\n\nDYNAMIC VARIATION DIRECTIVE [Session Seed: {session_seed}]:\n"
+            f"- Generate a brand new, unique set of questions testing diverse subtopics and angles for '{topic}'.\n"
+            f"- Avoid repeating standard introductory questions; craft fresh scenarios, applied problems, and calculations."
+        )
 
-            results = []
-            for i, raw_item in enumerate(items, start=1):
-                q = normalize_ai_question(raw_item, i)
-                if q:
-                    results.append(q)
-            return results
+        if avoid_questions:
+            clean_avoid = "\n".join(f"- {q}" for q in avoid_questions[:10])
+            prompt += (
+                f"\n\nCRITICAL ANTI-REPETITION CONSTRAINT:\n"
+                f"The following questions/concepts were ALREADY asked in recent tests for other students:\n"
+                f"{clean_avoid}\n"
+                f"You MUST NOT generate questions testing these exact items. Test completely DIFFERENT paragraphs, facts, calculations, or subtopics."
+            )
 
         # Tier 0: FreeLLMAPI Unified Gateway (14-Key Pool)
         if settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY:
@@ -714,6 +762,7 @@ class LLMService:
                     prompt,
                     model=target_model,
                     system_message="You are an assessment engine that strictly outputs a JSON object containing a questions array.",
+                    temperature=0.7,
                 )
                 generated = _parse_generated(data)
                 if len(generated) > 0:
@@ -733,6 +782,7 @@ class LLMService:
                     data = self._call_groq(
                         prompt,
                         system_message="You are an assessment engine that strictly outputs a JSON object containing a questions array.",
+                        temperature=0.7,
                     )
                     generated = _parse_generated(data)
                     if len(generated) > 0:
@@ -743,7 +793,7 @@ class LLMService:
 
             elif provider == "gemini" and len(self.gemini_keys) > 0:
                 try:
-                    data = self._call_gemini(prompt)
+                    data = self._call_gemini(prompt, temperature=0.7)
                     generated = _parse_generated(data)
                     if len(generated) > 0:
                         logger.info("Chunk %d/%d generated via Gemini (%s).", chunk_index, total_chunks, "Primary" if is_hindi else "Fallback")
@@ -751,22 +801,22 @@ class LLMService:
                 except Exception as e_gem:
                     logger.warning("Gemini chunk %d/%d failed (%s). Continuing fallback...", chunk_index, total_chunks, e_gem)
 
-        # Tier 3: Subject-Aware Mock Engine for this chunk
-        pool = MockAIEngine.get_pool(subject, topic, difficulty=diff_key)
-        offset = (chunk_index - 1) * count
+        # Tier 3: Subject-Aware Mock Engine for this chunk (randomized for every student)
+        raw_pool = list(MockAIEngine.get_pool(subject, topic, difficulty=diff_key))
+        random.shuffle(raw_pool)
         chunk_questions: List[InternalQuestion] = []
         for i in range(count):
-            item = pool[(offset + i) % len(pool)]
-            chunk_questions.append(
-                InternalQuestion(
-                    id=f"q_temp_{i}",
-                    question=item["question"],
-                    options=item["options"],
-                    correct_option=item["correct_option"],
-                    explanation=item["explanation"],
-                    is_mock=True,
-                )
+            item = raw_pool[i % len(raw_pool)]
+            q_cand = InternalQuestion(
+                id=f"q_temp_{chunk_index}_{i}_{uuid.uuid4().hex[:4]}",
+                question=item["question"],
+                options=item["options"],
+                correct_option=item["correct_option"],
+                explanation=item["explanation"],
+                is_mock=True,
             )
+            q_cand = shuffle_question_options(q_cand)
+            chunk_questions.append(q_cand)
         return chunk_questions
 
     # -------------------------------------------------------------
@@ -888,24 +938,46 @@ class LLMService:
         # Tier 0: Check existing Question Bank in PostgreSQL ($0 cost, 0ms latency)
         if not force_fresh and db_service:
             try:
+                # Fetch up to 3x count from bank so we can randomly sample unique questions
                 bank_qs = db_service.get_bank_questions(
                     subject_name=subject,
                     topic_name=topic,
                     difficulty=difficulty,
-                    limit=count
+                    limit=count * 3
                 )
                 if bank_qs:
-                    logger.info("Found %d pre-generated questions in PostgreSQL Question Bank.", len(bank_qs))
-                    all_questions.extend(bank_qs)
+                    sample_size = min(count, len(bank_qs))
+                    sampled = random.sample(bank_qs, sample_size)
+                    logger.info("Randomly sampled %d questions from %d bank candidates.", sample_size, len(bank_qs))
+                    all_questions.extend(sampled)
             except Exception as e_bank:
                 logger.warning("Question Bank lookup error: %s", e_bank)
+
+        # Fetch recent questions from DB to enforce anti-repetition across different user sessions
+        recent_questions: List[str] = []
+        if db_service:
+            try:
+                recent_questions = db_service.get_recent_question_texts(subject, topic, limit=12)
+            except Exception as e_rec:
+                logger.warning("Could not fetch recent questions: %s", e_rec)
 
         needed = count - len(all_questions)
 
         # Tier 1: Generate remaining deficit in parallel batches of 5 with notes grounding
         if needed > 0:
             if needed <= 5:
-                generated = self._generate_chunk(subject, topic, needed, difficulty, 1, 1, language=language, context=notes_context, mode=mode_clean)
+                generated = self._generate_chunk(
+                    subject,
+                    topic,
+                    needed,
+                    difficulty,
+                    1,
+                    1,
+                    language=language,
+                    context=notes_context,
+                    mode=mode_clean,
+                    avoid_questions=recent_questions,
+                )
             else:
                 chunk_size = 5
                 chunks = []
@@ -933,6 +1005,7 @@ class LLMService:
                             language=language,
                             context=notes_context,
                             mode=mode_clean,
+                            avoid_questions=recent_questions,
                         )
                         futures.append(f)
 

@@ -50,12 +50,8 @@ async def generate_quiz(
         except Exception:
             has_notes = False
 
-    # Force fresh generation for custom notes or notes/hybrid modes to strictly adhere to source text
-    force_fresh = (
-        getattr(request, "fresh", False)
-        or has_notes
-        or (user_mode in ["notes", "strict_notes", "hybrid"])
-    )
+    # Generate fresh AI questions by default so every student receives a unique quiz
+    force_fresh = not getattr(request, "use_bank", False)
 
     internal_session = llm_service.generate_quiz(
         subject=request.subject,

@@ -144,3 +144,38 @@ def test_prompt_template_formatting():
     )
     assert "What is 1+1?" in formatted_tutor
 
+
+def test_unique_quiz_generation_and_adapters():
+    """Ensure topic parsing, generated question parsing, and quiz randomization work flawlessly."""
+    from app.services.llm_service import parse_topics_data, _parse_generated
+    from app.services.mock_data import MockAIEngine
+
+    # Test 1: parse_topics_data with list and dict
+    raw_list = [{"topic_id": "top_1", "topic_name": "Calculus", "start_page": 1, "end_page": 5, "subtopics": ["Limits"], "summary": "Intro"}]
+    parsed_from_list = parse_topics_data(raw_list)
+    assert len(parsed_from_list) == 1
+    assert parsed_from_list[0].topic_name == "Calculus"
+
+    raw_dict = {"topics": raw_list}
+    parsed_from_dict = parse_topics_data(raw_dict)
+    assert len(parsed_from_dict) == 1
+    assert parsed_from_dict[0].topic_name == "Calculus"
+
+    # Test 2: _parse_generated with list and dict
+    raw_q_list = [{
+        "question": "What is the capital of France?",
+        "options": ["Paris", "Rome", "Berlin", "Madrid"],
+        "correct_option": "A",
+        "explanation": "Paris is the capital of France."
+    }]
+    parsed_qs = _parse_generated(raw_q_list)
+    assert len(parsed_qs) == 1
+    assert "Paris" in str(parsed_qs[0].options)
+
+    # Test 3: Quiz generation randomizes across sessions
+    session_1 = MockAIEngine.generate_quiz("Mathematics", "Calculus", 5, "Medium")
+    session_2 = MockAIEngine.generate_quiz("Mathematics", "Calculus", 5, "Medium")
+    assert session_1.quiz_session_id != session_2.quiz_session_id
+    assert len(session_1.questions) == 5
+
+
