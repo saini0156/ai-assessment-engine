@@ -102,5 +102,21 @@
     "review_text": "Option C translation has a typo",
     "user_id": "user-abc-456",
     "created_at": "2026-11-20T06:05:38.187558"
+  },
+  {
+    "id": "24df23b9-ae6c-4795-b1fd-7790bc160256",
+    "quiz_session_id": "test-session-123",
+    "question_id": "q_1",
+    "review_text": "Option C translation has a typo",
+    "user_id": "user-abc-456",
+    "created_at": "2026-11-20T06:50:16.041761"
+  },
+  {
+    "id": "68450ff8-e58a-4392-9d8d-4c622fd8c6ee",
+    "quiz_session_id": "test-session-123",
+    "question_id": "q_1",
+    "review_text": "Option C translation has a typo",
+    "user_id": "user-abc-456",
+    "created_at": "2026-11-20T06:55:11.894183"
   }
 ]

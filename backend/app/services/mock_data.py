@@ -2,6 +2,7 @@
 Subject-Aware Offline Fallback Question Banks and Mock AI Engine.
 Extracted for code hygiene and modularity.
 """
+import random
 import re
 import uuid
 from typing import Any, Dict, List, Optional
@@ -564,7 +565,8 @@ class MockAIEngine:
 
     @classmethod
     def generate_quiz(cls, subject: str, topic: str, count: int, difficulty: str) -> InternalQuizSession:
-        pool = cls.get_pool(subject, topic, difficulty)
+        pool = list(cls.get_pool(subject, topic, difficulty))
+        random.shuffle(pool)
         selected = []
         for i in range(count):
             selected.append(pool[i % len(pool)])
