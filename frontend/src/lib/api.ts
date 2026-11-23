@@ -493,6 +493,12 @@ export const apiClient = {
     return res.json();
   },
 
+    getAdminFeedback: async (): Promise<any> => {
+    const res = await fetch(`${API_BASE}/admin/feedback`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(await parseError(res, "Failed to load feedback"));
+    return res.json();
+  },
+
   /**
    * Admin: Change User Role
    */
@@ -520,3 +526,4 @@ export const apiClient = {
     return res.json();
   },
 };
+

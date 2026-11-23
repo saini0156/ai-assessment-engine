@@ -10,6 +10,7 @@ import {
   UploadCloud,
   Library,
   Loader2,
+  MessageSquare,
 } from "lucide-react";
 import { getSession, saveSession } from "@/lib/session";
 import { apiClient } from "@/lib/api";
@@ -19,6 +20,7 @@ const links = [
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/upload-pdf", label: "Upload PDF", icon: UploadCloud },
   { href: "/admin/subjects", label: "Subjects", icon: Library },
+    { href: "/admin/feedback", label: "Feedback", icon: MessageSquare },
 ];
 
 // Same black logo your Navbar uses
