@@ -330,6 +330,7 @@ def sanitize_and_parse_json(raw_text: str) -> Any:
     Ultra-resilient JSON parser:
       - Strips markdown code blocks (```json ... ```)
       - Unescapes trailing commas (, } -> })
+      - Fixes unescaped LaTeX backslashes (\frac, \rightarrow, \theta, \beta)
       - Extracts JSON array or object if surrounded by preamble/chatter
     """
     import re, json
@@ -341,14 +342,20 @@ def sanitize_and_parse_json(raw_text: str) -> Any:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        # Locate outermost JSON structure [ ... ] or { ... }
-        match = re.search(r"(\[.*\]|\{.*\})", text, re.DOTALL)
-        if match:
-            candidate = match.group(1).strip()
-            # Clean trailing commas: ,] -> ] and ,} -> }
-            candidate = re.sub(r",\s*([\]\}])", r"\1", candidate)
-            return json.loads(candidate)
-        raise
+        pass
+
+    # Locate outermost JSON structure [ ... ] or { ... }
+    match = re.search(r"(\[.*\]|\{.*\})", text, re.DOTALL)
+    candidate = match.group(1).strip() if match else text
+
+    # Clean trailing commas: ,] -> ] and ,} -> }
+    candidate = re.sub(r",\s*([\]\}])", r"\1", candidate)
+
+    # Fix unescaped LaTeX backslashes that clash with JSON escape sequences (\frac, \rightarrow, \times, \beta, \theta)
+    candidate = re.sub(r'\\([rftbn])([a-zA-Z])', r'\\\\\1\2', candidate)
+    candidate = re.sub(r'\\([^"\\/bfnrtu])', r'\\\\\1', candidate)
+
+    return json.loads(candidate)
 
 
 def _parse_generated(raw_data: Any) -> List[InternalQuestion]:
