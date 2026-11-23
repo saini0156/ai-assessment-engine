@@ -238,7 +238,7 @@ function QuizConfigForm() {
   const [subject, setSubject] = useState("");
   const [topic, setTopic] = useState("");
   const [loadingSubjects, setLoadingSubjects] = useState(true);
-  const [count, setCount] = useState(30);
+  const [count, setCount] = useState(15);
   const [difficulty, setDifficulty] = useState("Medium");
   const [mode, setMode] = useState<QuizMode>("hybrid");
   const [loading, setLoading] = useState(false);
