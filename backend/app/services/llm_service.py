@@ -30,6 +30,199 @@ logger = logging.getLogger(__name__)
 
 TOPIC_LIST_ADAPTER = TypeAdapter(List[TopicItem])
 
+# ===================== HINDI FIXES (auto-added by apply_fixes.py) =====================
+LETTERS = ["A", "B", "C", "D"]
+DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
+
+# Hindi + English stop words (tokenizer ke liye)
+_STOP_WORDS = {
+    "what", "is", "the", "of", "in", "to", "a", "an", "and", "or", "for", "which",
+    "के", "की", "का", "को", "में", "से", "होता", "होती", "है", "हैं", "किन्हें",
+    "कहा", "जाता", "अनुसार", "होते", "कुल", "संख्या", "किन", "भावों", "समान", "किसे", "कौन",
+    "निम्नलिखित", "कथन", "सही", "क्या", "कौनसा", "कौन-सा", "एक", "तथा", "और", "पर", "यह", "वह",
+}
+
+
+def _tokens(text: str) -> set:
+    """
+    Devanagari-safe tokenizer.
+    BUG FIX: python ka \\w Hindi ki matras (ि, ी, ु, ्, ं ...) ko word-character nahi maanta,
+    isliye purana code Hindi shabdon ko tukdon me tod deta tha ('विद्युत' -> 'व द य त').
+    Yahan Devanagari range explicitly allow ki gayi hai.
+    """
+    words = re.findall(r"[\u0900-\u097F\w]+", (text or "").lower())
+    return {w for w in words if w not in _STOP_WORDS and len(w) > 1}
+
+
+def _answer_key(text: str) -> str:
+    """Answer compare karne ke liye: sirf punctuation/space hataata hai, matras nahi."""
+    return re.sub(r"[^\u0900-\u097F\w]", "", (text or "").strip().lower())
+
+
+def is_duplicate_question(new_q, existing_questions) -> bool:
+    if not new_q or not new_q.question:
+        return True
+
+    new_tokens = _tokens(new_q.question)
+    new_ans = _answer_key(str(new_q.options.get(new_q.correct_option, "")))
+
+    for ex in existing_questions:
+        if not ex or not ex.question:
+            continue
+        if new_q.question.strip().lower() == ex.question.strip().lower():
+            return True
+
+        ex_tokens = _tokens(ex.question)
+        ex_ans = _answer_key(str(ex.options.get(ex.correct_option, "")))
+
+        # Same answer + kaafi overlap => same concept
+        if new_ans and ex_ans and len(new_ans) >= 2 and new_ans == ex_ans:
+            if new_tokens and ex_tokens:
+                overlap = len(new_tokens & ex_tokens) / max(1, min(len(new_tokens), len(ex_tokens)))
+                if overlap >= 0.5:
+                    return True
+
+        # Bahut zyada word overlap (Jaccard)
+        if new_tokens and ex_tokens:
+            union = new_tokens | ex_tokens
+            if union and (len(new_tokens & ex_tokens) / len(union)) >= 0.6:
+                return True
+    return False
+
+
+def parse_correct_letter(raw: Any) -> Optional[str]:
+    """
+    BUG FIX: purana code re.search('[A-Da-d]') use karta tha, isliye
+    'Answer: B' -> 'A' aur 'Correct: D' -> 'C' ban jata tha (galat answer key!).
+    Ab sirf clean format accept hota hai, warna None (question reject).
+    """
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return LETTERS[raw] if 0 <= raw <= 3 else None
+    s = str(raw or "").strip()
+    m = re.match(
+        r"^(?:option|answer|ans|correct(?:\s+(?:answer|option))?)?\s*[:\-]?\s*\(?\s*([A-Da-d])\s*[\)\.\:]?\s*(?:$|[\s\-])",
+        s, re.IGNORECASE,
+    )
+    return m.group(1).upper() if m else None
+
+
+def remap_option_letters(text: str, mapping: Dict[str, str]) -> str:
+    """
+    Shuffle ke baad explanation me likhe letters ('Option A', 'विकल्प B', '(C)') ek saath badalta hai.
+    BUG FIX: purana code ek-ek karke replace karta tha, isse baaki letters galat reh jate the.
+    """
+    if not text:
+        return text
+
+    def swap(m):
+        prefix, letter, suffix = m.group(1), m.group(2).upper(), m.group(3)
+        return f"{prefix}{mapping.get(letter, letter)}{suffix}"
+
+    return re.sub(r"(\bOption\s+|\bविकल्प\s+|\()([A-D])(\)?\b)", swap, text)
+
+
+def _shuffle_with_mapping(options: Dict[str, str], correct: str):
+    items = [(k, options[k]) for k in LETTERS if k in options]
+    random.shuffle(items)
+    new_opts, mapping, new_correct = {}, {}, "A"
+    for i, (old_key, text) in enumerate(items[:4]):
+        new_key = LETTERS[i]
+        new_opts[new_key] = text
+        mapping[old_key] = new_key
+        if old_key == correct:
+            new_correct = new_key
+    return new_opts, mapping, new_correct
+
+
+def normalize_ai_question(item: Any, idx: int):
+    """
+    Strict normalizer: kharab question ko ROK deta hai (None return) instead of
+    'Option Unavailable' / '(Alternative B)' jaisa kachra students ko dikhane ke.
+    Generate-loop pehle se kam questions par retry/fill karta hai, isliye reject karna safe hai.
+    Isme aapka clean_math_text() use hota hai (wahi file me defined hai).
+    """
+    if not isinstance(item, dict):
+        return None
+
+    q_text = clean_math_text(str(item.get("question") or item.get("question_text") or "").strip())
+    if not q_text:
+        return None
+
+    # ---- options (list ya dict dono) ----
+    raw_opts = item.get("options")
+    opts: Dict[str, str] = {}
+    if isinstance(raw_opts, list):
+        for i, opt in enumerate(raw_opts[:4]):
+            key = LETTERS[i]
+            txt = str(opt).strip()
+            if len(txt) >= 3 and txt[0].upper() == key and txt[1] in ")" ".:-":
+                txt = txt[2:].strip()
+            opts[key] = clean_math_text(txt)
+    elif isinstance(raw_opts, dict):
+        for key in LETTERS:
+            val = raw_opts.get(key, raw_opts.get(key.lower()))
+            if val is not None:
+                opts[key] = clean_math_text(str(val).strip())
+
+    if len(opts) != 4 or any(not v for v in opts.values()):
+        return None                      # option missing/blank => reject
+    if len({v.strip().lower() for v in opts.values()}) != 4:
+        return None                      # duplicate options => reject
+
+    # ---- correct option ----
+    raw_corr = item.get("correct_option")
+    if raw_corr is None:
+        raw_corr = item.get("answer", item.get("correct_answer"))
+    correct = parse_correct_letter(raw_corr)
+    if correct is None and raw_corr is not None:
+        # model ne letter ki jagah answer ka text de diya ho
+        for k, v in opts.items():
+            if str(raw_corr).strip().lower() == v.strip().lower():
+                correct = k
+                break
+    if correct is None:
+        return None                      # answer key samajh nahi aaya => reject (galat key se behtar)
+
+    # ---- explanation ----
+    explanation = clean_math_text(str(item.get("explanation") or item.get("reasoning") or "").strip())
+    if not explanation:
+        ans = opts[correct]
+        explanation = f"सही उत्तर: {ans}" if DEVANAGARI_RE.search(q_text) else f"Correct answer: {ans}"
+
+    # Explanation clearly kisi aur option ko sahi bataye to align karo
+    m = re.search(
+        r"(?:correct answer is|correct option is|सही उत्तर|सही विकल्प)\s*(?:है)?\s*[:\-]?\s*(?:Option|विकल्प)?\s*\(?([A-D])\)?\b",
+        explanation, re.IGNORECASE,
+    )
+    if m and m.group(1).upper() in opts:
+        correct = m.group(1).upper()
+
+    # ---- shuffle + explanation letters sync ----
+    new_opts, mapping, new_correct = _shuffle_with_mapping(opts, correct)
+    explanation = remap_option_letters(explanation, mapping)
+
+    return InternalQuestion(
+        id=f"q_{idx}", question=q_text, options=new_opts,
+        correct_option=new_correct, explanation=explanation,
+    )
+
+
+def shuffle_question_options(q):
+    if not q or not q.options or len(q.options) < 2:
+        return q
+    old_correct = (q.correct_option or "A").strip().upper()
+    new_opts, mapping, new_correct = _shuffle_with_mapping(q.options, old_correct)
+    return InternalQuestion(
+        id=q.id, question=q.question, options=new_opts, correct_option=new_correct,
+        explanation=remap_option_letters(q.explanation or "", mapping),
+        is_mock=getattr(q, "is_mock", False),
+    )
+
+# ======================================================================================
+
+
 
 def parse_topics_data(data: Any) -> List[TopicItem]:
     """
@@ -121,107 +314,6 @@ def sanitize_and_parse_json(raw_text: str) -> Any:
         raise
 
 
-def normalize_ai_question(item: Any, idx: int) -> Optional[InternalQuestion]:
-    """
-    Robust normalizer that adapts any LLM response structure:
-      - options as list ["A", "B", "C", "D"] or dict {"A": "...", ...}
-      - correct_option as integer (0 -> 'A') or string ("A", "Option A", "answer")
-      - auto-detects and aligns answer key if explanation contradicts correct_option
-      - ensures all 4 options are distinct
-      - missing explanation auto-filled
-    """
-    if not isinstance(item, dict):
-        return None
-
-    import re, random
-    q_text = clean_math_text(str(item.get("question") or item.get("question_text") or "").strip())
-    if not q_text:
-        return None
-
-    # 1. Normalize Options (supports list or dict)
-    raw_opts = item.get("options")
-    clean_opts: Dict[str, str] = {}
-    if isinstance(raw_opts, list):
-        for o_idx, opt in enumerate(raw_opts[:4]):
-            key = chr(ord("A") + o_idx)
-            opt_str = clean_math_text(str(opt).strip())
-            # Strip leading "A) ", "A. ", "A: "
-            if len(opt_str) >= 3 and opt_str[0].upper() == key and opt_str[1] in [")", ".", ":", "-"]:
-                opt_str = opt_str[2:].strip()
-            clean_opts[key] = opt_str
-    elif isinstance(raw_opts, dict):
-        for key in ["A", "B", "C", "D"]:
-            val = raw_opts.get(key) or raw_opts.get(key.lower()) or "Option Unavailable"
-            clean_opts[key] = clean_math_text(str(val).strip())
-
-    # Ensure all 4 options exist
-    for key in ["A", "B", "C", "D"]:
-        if key not in clean_opts or not clean_opts[key]:
-            clean_opts[key] = f"Option {key}"
-
-    # Deduplicate options if any two options are identical
-    seen_texts = set()
-    for key in ["A", "B", "C", "D"]:
-        opt_val = clean_opts[key]
-        if opt_val in seen_texts:
-            clean_opts[key] = f"{opt_val} (Alternative {key})"
-        seen_texts.add(clean_opts[key])
-
-    # 2. Normalize Correct Option (handles integer 0, 1, 2, 3 or strings)
-    raw_corr = item.get("correct_option") if item.get("correct_option") is not None else (
-        item.get("answer") if item.get("answer") is not None else item.get("correct_answer")
-    )
-    if isinstance(raw_corr, int) and 0 <= raw_corr <= 3:
-        clean_correct = chr(ord("A") + raw_corr)
-    else:
-        m = re.search(r"[A-Da-d]", str(raw_corr or "A"))
-        clean_correct = m.group(0).upper() if m else "A"
-
-    # 3. Normalize Explanation
-    explanation = clean_math_text(str(item.get("explanation") or item.get("reasoning") or "").strip())
-    if not explanation:
-        explanation = f"Option {clean_correct} is the verified correct answer for this question."
-
-    # Consistency Check: If explanation explicitly states another option as correct (e.g. "Option C is correct")
-    # align clean_correct before shuffling so answer key is never wrong!
-    explicit_key_match = re.search(
-        r"(?:correct answer is|sahi uttar hai|sahi vikalp hai|correct option is)\s*[:\-]?\s*Option\s*([A-D])\b",
-        explanation,
-        re.IGNORECASE
-    )
-    if explicit_key_match:
-        detected_key = explicit_key_match.group(1).upper()
-        if detected_key in clean_opts and detected_key != clean_correct:
-            clean_correct = detected_key
-
-    # 4. Balanced Option Shuffling (Eliminates Option A Bias!)
-    correct_text = clean_opts.get(clean_correct, clean_opts.get("A", "Option A"))
-    opt_pairs = [(k == clean_correct, text) for k, text in clean_opts.items()]
-    random.shuffle(opt_pairs)
-
-    shuffled_opts: Dict[str, str] = {}
-    new_correct = "A"
-    for o_idx, (is_corr, opt_text) in enumerate(opt_pairs[:4]):
-        key = chr(ord("A") + o_idx)
-        shuffled_opts[key] = opt_text
-        if is_corr:
-            new_correct = key
-
-    # In explanation, update any literal references to the old correct letter
-    if clean_correct != new_correct:
-        explanation = re.sub(rf"\bOption {clean_correct}\b", f"Option {new_correct}", explanation)
-        explanation = re.sub(rf"\bविकल्प {clean_correct}\b", f"विकल्प {new_correct}", explanation)
-        explanation = re.sub(rf"\({clean_correct}\)", f"({new_correct})", explanation)
-
-    return InternalQuestion(
-        id=f"q_{idx}",
-        question=q_text,
-        options=shuffled_opts,
-        correct_option=new_correct,
-        explanation=explanation,
-    )
-
-
 def _parse_generated(raw_data: Any) -> List[InternalQuestion]:
     """
     Parses LLM output (list or wrapped dict) into a list of normalized InternalQuestion objects.
@@ -240,110 +332,6 @@ def _parse_generated(raw_data: Any) -> List[InternalQuestion]:
         if q:
             results.append(q)
     return results
-
-
-def shuffle_question_options(q: InternalQuestion) -> InternalQuestion:
-    """
-    Shuffles options (A, B, C, D) randomly for any question (Bank, AI, or Mock)
-    and synchronizes correct_option and explanation accordingly.
-    Guarantees every student receives randomized option ordering.
-    """
-    if not q or not q.options or len(q.options) < 2:
-        return q
-
-    old_correct = q.correct_option.strip().upper() if q.correct_option else "A"
-
-    # Pair each option: (is_correct, text)
-    pairs = []
-    for k in ["A", "B", "C", "D"]:
-        if k in q.options:
-            is_corr = (k.strip().upper() == old_correct)
-            pairs.append((is_corr, q.options[k]))
-
-    for k, text in q.options.items():
-        if k not in ["A", "B", "C", "D"]:
-            is_corr = (k.strip().upper() == old_correct)
-            pairs.append((is_corr, text))
-
-    import random
-    random.shuffle(pairs)
-
-    new_options: Dict[str, str] = {}
-    new_correct = "A"
-    for idx, (is_corr, text) in enumerate(pairs[:4]):
-        key = chr(ord("A") + idx)
-        new_options[key] = text
-        if is_corr:
-            new_correct = key
-
-    explanation = q.explanation or ""
-    if old_correct != new_correct and explanation:
-        import re
-        explanation = re.sub(rf"\bOption {old_correct}\b", f"Option {new_correct}", explanation)
-        explanation = re.sub(rf"\bविकल्प {old_correct}\b", f"विकल्प {new_correct}", explanation)
-        explanation = re.sub(rf"\({old_correct}\)", f"({new_correct})", explanation)
-
-    return InternalQuestion(
-        id=q.id,
-        question=q.question,
-        options=new_options,
-        correct_option=new_correct,
-        explanation=explanation,
-        is_mock=getattr(q, "is_mock", False),
-    )
-
-
-def is_duplicate_question(new_q: InternalQuestion, existing_questions: List[InternalQuestion]) -> bool:
-    """
-    Multi-factor smart deduplication:
-      1. Exact question text comparison.
-      2. Meaningful token Jaccard similarity (>= 0.45 threshold).
-      3. Identical correct answer value collision on shared topics.
-    """
-    if not new_q or not new_q.question:
-        return True
-
-    def _tokenize(text: str) -> set:
-        cleaned = re.sub(r'[^\w\s]', ' ', text.lower())
-        words = set(cleaned.split())
-        stop_words = {
-            "what", "is", "the", "of", "in", "to", "a", "an", "and", "or", "for", "which",
-            "के", "की", "का", "को", "में", "से", "होता", "होती", "है", "हैं", "किन्हें",
-            "कहा", "जाता", "अनुसार", "होते", "कुल", "संख्या", "किन", "भावों", "समान", "किसे", "कौन"
-        }
-        return {w for w in words if w not in stop_words and len(w) > 1}
-
-    new_tokens = _tokenize(new_q.question)
-    new_ans = str(new_q.options.get(new_q.correct_option, "")).strip().lower()
-    new_ans_clean = re.sub(r'[^\w]', '', new_ans)
-
-    for ex in existing_questions:
-        if not ex or not ex.question:
-            continue
-
-        # 1. Exact string match
-        if new_q.question.strip().lower() == ex.question.strip().lower():
-            return True
-
-        ex_ans = str(ex.options.get(ex.correct_option, "")).strip().lower()
-        ex_ans_clean = re.sub(r'[^\w]', '', ex_ans)
-
-        # 2. Answer collision: Both questions have the same correct answer (e.g. "108" or "13° 20'")
-        if new_ans_clean and ex_ans_clean and len(new_ans_clean) >= 2:
-            if new_ans_clean == ex_ans_clean or (len(new_ans_clean) > 4 and new_ans_clean in ex_ans_clean):
-                ex_tokens = _tokenize(ex.question)
-                # If they share even 1 meaningful keyword and have the same answer, it's a duplicate concept
-                if len(new_tokens & ex_tokens) >= 1:
-                    return True
-
-        # 3. High word token overlap (Jaccard similarity >= 0.45)
-        ex_tokens = _tokenize(ex.question)
-        if new_tokens and ex_tokens:
-            union = new_tokens | ex_tokens
-            if union and (len(new_tokens & ex_tokens) / len(union)) >= 0.45:
-                return True
-
-    return False
 
 
 # =========================================================================
@@ -454,7 +442,7 @@ class LLMService:
                         "model": model_candidate,
                         "messages": messages,
                         "temperature": temperature,
-                        "max_tokens": 4096,
+                        "max_tokens": 8192,
                     }
                     resp = self._groq_client.post(url, json=payload, headers=headers)
                     if resp.status_code == 404:
@@ -472,9 +460,6 @@ class LLMService:
                     msg = choice.get("message", {})
                     content = msg.get("content") or ""
 
-                    # Fallback to reasoning field if model placed output in reasoning
-                    if not content.strip() and msg.get("reasoning"):
-                        content = msg.get("reasoning") or ""
 
                     if not content.strip():
                         raise ValueError(f"Model {model_candidate} returned empty content")
@@ -509,10 +494,9 @@ class LLMService:
         last_error = None
         # Active Gemini models: gemini-flash-lite-latest (fastest, high availability), gemini-3.8-flash, gemini-flash-latest
         gemini_models = [
-            "gemini-flash-lite-latest",
             "gemini-3.8-flash",
+            "gemini-flash-lite-latest",
             "gemini-flash-latest",
-            "gemini-3.1-pro-preview",
             "gemini-3.5-flash",
         ]
 
@@ -523,7 +507,7 @@ class LLMService:
             for api_key in keys_to_try:
                 masked = f"...{api_key[-4:]}" if len(api_key) >= 4 else "key"
                 try:
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={api_key}"
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent"
                     headers = {
                         "Content-Type": "application/json",
                         "x-goog-api-key": api_key,
@@ -533,10 +517,10 @@ class LLMService:
                         "generationConfig": {
                             "responseMimeType": "application/json",
                             "temperature": temperature,
-                            "maxOutputTokens": 4096,
+                            "maxOutputTokens": 8192,
                         }
                     }
-                    resp = self._groq_client.post(url, json=payload, headers=headers, timeout=12.0)
+                    resp = self._groq_client.post(url, json=payload, headers=headers, timeout=30.0)
 
                     if resp.status_code == 404:
                         logger.warning("Gemini model %s returned 404 Not Found. Marking dead and skipping remaining keys.", gemini_model)
@@ -550,7 +534,7 @@ class LLMService:
                     if resp.status_code == 503:
                         logger.warning("Gemini REST model %s on key %s overloaded (503). Retrying in 1.5s...", gemini_model, masked)
                         time.sleep(1.5)
-                        resp = self._groq_client.post(url, json=payload, headers=headers, timeout=12.0)
+                        resp = self._groq_client.post(url, json=payload, headers=headers, timeout=30.0)
                         if resp.status_code == 503:
                             continue  # Try next key on persistent 503
 
@@ -653,7 +637,7 @@ class LLMService:
             except Exception as e_free:
                 logger.warning("FreeLLMAPI topic extraction failed (%s). Continuing direct fallback...", e_free)
 
-        tier_order = ["groq", "gemini"]
+        tier_order = ["gemini", "groq"] if is_hindi else ["groq", "gemini"]
         for provider in tier_order:
             if provider == "groq" and self.groq_pool.total_keys() > 0:
                 try:
@@ -743,6 +727,8 @@ class LLMService:
         else:
             lang_directive = "LANGUAGE DIRECTIVE: Output all questions, options, and explanations in clear English."
 
+        gen_temp = 0.35 if is_hindi else 0.7
+
         # In pure AI mode, bypass notes context entirely
         if mode_key != "ai" and context and context.strip():
             context_block = (
@@ -831,7 +817,7 @@ class LLMService:
                     prompt,
                     model=target_model,
                     system_message="You are an assessment engine that strictly outputs a JSON object containing a questions array.",
-                    temperature=0.7,
+                    temperature=gen_temp,
                 )
                 generated = _parse_generated(data)
                 if len(generated) > 0:
@@ -843,7 +829,7 @@ class LLMService:
         # Smart Language-Based Routing:
         # Hindi -> Gemini 1st (Flawless NCERT Hindi), Groq 2nd fallback
         # English -> Groq 1st (0.9s ultra-speed), Gemini 2nd fallback
-        tier_order = ["groq", "gemini"]
+        tier_order = ["gemini", "groq"] if is_hindi else ["groq", "gemini"]
 
         for provider in tier_order:
             if provider == "groq" and self.groq_pool.total_keys() > 0:
@@ -851,7 +837,7 @@ class LLMService:
                     data = self._call_groq(
                         prompt,
                         system_message="You are an assessment engine that strictly outputs a JSON object containing a questions array.",
-                        temperature=0.7,
+                        temperature=gen_temp,
                     )
                     generated = _parse_generated(data)
                     if len(generated) > 0:
@@ -862,7 +848,7 @@ class LLMService:
 
             elif provider == "gemini" and len(self.gemini_keys) > 0:
                 try:
-                    data = self._call_gemini(prompt, temperature=0.7)
+                    data = self._call_gemini(prompt, temperature=gen_temp)
                     generated = _parse_generated(data)
                     if len(generated) > 0:
                         logger.info("Chunk %d/%d generated via Gemini (%s).", chunk_index, total_chunks, "Primary" if is_hindi else "Fallback")
@@ -1200,7 +1186,7 @@ class LLMService:
                     if len(questions_dict) >= count:
                         break
                     candidate_id = f"q_{len(questions_dict) + 1}"
-                    suffix = f" [Concept Variant {variant_seed}]" if variant_seed > 1 else ""
+                    suffix = ""
                     candidate = InternalQuestion(
                         id=candidate_id,
                         question=f"{item['question']}{suffix}",
@@ -1261,7 +1247,7 @@ class LLMService:
         required_keys = ["simplified_explanation", "memory_tip", "real_world_example"]
 
         # Tier 0: FreeLLMAPI Unified Gateway
-        if settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY:
+        if False and settings.FREELLMAPI_URL and settings.FREELLMAPI_KEY:
             try:
                 target_model = "gemini-flash" if is_hindi else "qwen3.8-27b"
                 data = self._call_freellmapi(prompt, model=target_model)
@@ -1274,7 +1260,7 @@ class LLMService:
         # Smart Language Routing for AI Tutor:
         # Hindi -> Gemini 1st (Empathetic, authentic Hindi tutoring), Groq 2nd fallback
         # English -> Groq 1st, Gemini 2nd fallback
-        tier_order = ["groq", "gemini"]
+        tier_order = ["gemini", "groq"] if is_hindi else ["groq", "gemini"]
 
         for provider in tier_order:
             if provider == "groq" and self.groq_pool.total_keys() > 0:
