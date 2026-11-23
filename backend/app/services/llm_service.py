@@ -245,7 +245,8 @@ def clean_math_text(s: str) -> str:
       - Converts ^circ, ^{circ}, ^\\circ into standard ^{\\circ}
       - Normalizes degree notations (e.g. 15° -> 15^{\\circ})
       - Adds spacing between degree and minutes (e.g. 13^{\\circ} 20')
-      - Wraps bare LaTeX math commands in $...$ if not already delimited
+      - Encloses naked degree notations ($150^{\\circ}$) and equations ($sin^2(x) + cos^2(x)$) in $...$
+      - Corrects known OCR / PDF Hindi ligatures and typos (e.g. 'र्णणत भार्' -> 'गणित भाग')
     """
     if not s:
         return s
@@ -257,13 +258,25 @@ def clean_math_text(s: str) -> str:
     # 3. Handle unicode degree symbol: 360° -> 360^{\circ}
     s = re.sub(r'(\d+)\s*°(?!\w)', r'\1^{\\circ}', s)
 
-    # 4. If string contains raw LaTeX commands and has no $, wrap it in $ so KaTeX renders it
+    # 4. Wrap naked degree notations (e.g. 150^{\circ} or 13^{\circ} 20') in single $ delimiters
+    s = re.sub(
+        r'(?<!\$)\b(\d+(?:\.\d+)?\s*\^\{\\circ\}(?:\s*\d+[\'′"]?)?)(?!\$)',
+        r'$\1$',
+        s,
+    )
+
+    # 5. Wrap common mathematical formulas in $...$ if not already delimited
+    s = re.sub(r'(?<!\$)\b(sin\^2\([^\)]+\)\s*\+\s*cos\^2\([^\)]+\))(?!\$)', r'$\1$', s)
+    s = re.sub(r'(?<!\$)\b(ax\^2\s*\+\s*bx\s*\+\s*c\s*=\s*0)(?!\$)', r'$\1$', s)
+    s = re.sub(r'(?<!\$)\b(b\^2\s*-\s*4ac)(?!\$)', r'$\1$', s)
+
+    # 6. If string contains raw LaTeX commands and has no $, wrap it in $ so KaTeX renders it
     if "\\" in s and "$" not in s:
         math_keywords = ["\\frac", "\\sqrt", "\\times", "\\pm", "\\sum", "\\int", "\\alpha", "\\beta", "\\theta", "\\pi", "\\cdot", "\\le", "\\ge", "\\ne", "\\approx"]
         if any(kw in s for kw in math_keywords):
             s = f"${s}$"
 
-    # 5. Decode literal unicode escapes like \u{00E2} or \u00e2 and fix Hindi font artifacts
+    # 7. Decode literal unicode escapes like \u{00E2} or \u00e2 and fix Hindi font artifacts
     def _decode_hex_brace(match):
         try:
             return chr(int(match.group(1), 16))
@@ -281,6 +294,30 @@ def clean_math_text(s: str) -> str:
     # Fix common Hindi PDF ligature corruptions (e.g. 'भचâड' or 'भच\u{00E2}ड' -> 'भचक्र')
     s = re.sub(r'भच[â\u00e2\?]+ड?', 'भचक्र', s)
     s = s.replace('â€™', "'").replace('â€œ', '"').replace('â€', '"')
+
+    # Common OCR/Ligature dictionary replacements
+    ocr_fixes = [
+        ("र्णणत", "गणित"),
+        ("भार्गों", "भागों"),
+        ("भार्", "भाग"),
+        ("लिद्ांत", "सिद्धांत"),
+        ("सिधन्त", "सिद्धांत"),
+        ("संदहिा", "संहिता"),
+        ("िंहहता", "संहिता"),
+        ("Ǔनरायण", "निरयण"),
+        ("भचक ", "भचक्र "),
+        ("भचक\n", "भचक्र\n"),
+        ("भचक।", "भचक्र।"),
+        ("लagna", "लग्न"),
+        ("िो ", "दो "),
+        ("र्या ", "गया "),
+        ("उर्त्र", "उत्तर"),
+        ("ब दध्", "बुद्धि"),
+        ("कुुंिली", "कुंडली"),
+        ("वषषफल", "वर्षफल"),
+    ]
+    for bad_w, good_w in ocr_fixes:
+        s = s.replace(bad_w, good_w)
 
     # Common Hindi spelling normalization (e.g. 'घुमने' -> 'घूमने')
     s = s.replace('घुमने', 'घूमने')
@@ -731,11 +768,12 @@ class LLMService:
 
         # In pure AI mode, bypass notes context entirely
         if mode_key != "ai" and context and context.strip():
+            cleaned_context = clean_math_text(context.strip())[:16000]
             context_block = (
                 "===================================================================\n"
                 "REFERENCE STUDY MATERIAL / NOTES (GROUNDING SOURCE):\n"
                 '"""\n'
-                f"{context.strip()[:16000]}\n"
+                f"{cleaned_context}\n"
                 '"""\n'
                 "===================================================================\n"
                 "STRICT GROUNDING DIRECTIVE:\n"

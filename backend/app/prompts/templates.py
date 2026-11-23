@@ -99,7 +99,8 @@ DISTRACTOR ENGINEERING & FORMATTING RULES:
 8. OPTION BALANCING: Evenly distribute the correct option across 'A', 'B', 'C', and 'D'. Do NOT default to putting the correct answer in Option 'A'.
 9. STRICT ANSWER-EXPLANATION CONSISTENCY: Do NOT mention option letters (A/B/C/D) inside the explanation; refer to the correct answer by its content instead.
 10. STRICT OPTION UNIQUENESS: All 4 options must be mutually exclusive and completely distinct. Never repeat identical option values or synonyms.
-11. CLEAN UNICODE: Output clean UTF-8 text in the requested language (Devanagari for Hindi). NEVER output raw Unicode escape sequences. Fix corrupted OCR/PDF characters into normal words.
+11. CLEAN UNICODE & OCR REPAIR: Output clean UTF-8 text in the requested language (Devanagari for Hindi). If the reference notes contain broken OCR characters or ligatures (such as 'र्णणत' -> 'गणित', 'भार्' -> 'भाग', 'संदहिा' -> 'संहिता', 'लिद्ांत' -> 'सिद्धांत', 'लagna' -> 'लग्न', 'Ǔनरायण' -> 'निरयण', 'भचक' -> 'भचक्र'), you MUST correct them into proper standard Hindi words. NEVER output broken half-English or corrupted characters.
+12. MANDATORY MATH DELIMITERS: ALWAYS wrap every single formula, expression, and degree notation in single dollar signs (e.g. $150^{{\\circ}}$, $\\sin^2(x) + \\cos^2(x) = 1$, $ax^2 + bx + c = 0$, $b^2 - 4ac$). NEVER leave naked mathematical expressions or degree symbols without dollar signs.
 
 Return ONLY a valid JSON array of objects with keys:
 - id: "q_1", "q_2", etc.
