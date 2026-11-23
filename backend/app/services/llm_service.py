@@ -529,12 +529,12 @@ class LLMService:
             raise RuntimeError("No Gemini API keys configured.")
 
         last_error = None
-        # Active Gemini models: gemini-flash-lite-latest (fastest, high availability), gemini-3.8-flash, gemini-flash-latest
+        # Active Gemini models: prioritize ultra-fast low-latency models first (~1.5s response)
         gemini_models = [
-            "gemini-3.8-flash",
             "gemini-flash-lite-latest",
+            "gemini-3.1-flash-lite",
+            "gemini-3.8-flash",
             "gemini-flash-latest",
-            "gemini-3.5-flash",
         ]
 
         for gemini_model in gemini_models:
@@ -554,10 +554,10 @@ class LLMService:
                         "generationConfig": {
                             "responseMimeType": "application/json",
                             "temperature": temperature,
-                            "maxOutputTokens": 8192,
+                            "maxOutputTokens": 3072,
                         }
                     }
-                    resp = self._groq_client.post(url, json=payload, headers=headers, timeout=30.0)
+                    resp = self._groq_client.post(url, json=payload, headers=headers, timeout=12.0)
 
                     if resp.status_code == 404:
                         logger.warning("Gemini model %s returned 404 Not Found. Marking dead and skipping remaining keys.", gemini_model)
@@ -571,7 +571,7 @@ class LLMService:
                     if resp.status_code == 503:
                         logger.warning("Gemini REST model %s on key %s overloaded (503). Retrying in 1.5s...", gemini_model, masked)
                         time.sleep(1.5)
-                        resp = self._groq_client.post(url, json=payload, headers=headers, timeout=30.0)
+                        resp = self._groq_client.post(url, json=payload, headers=headers, timeout=12.0)
                         if resp.status_code == 503:
                             continue  # Try next key on persistent 503
 
