@@ -97,9 +97,10 @@ DISTRACTOR ENGINEERING & FORMATTING RULES:
 6. LATEX FORMATTING FOR FORMULAS: Format all mathematical formulas, scientific notations, chemical equations, angle calculations, and degree notations using standard LaTeX enclosed in single dollar signs (e.g. $E = mc^2$, $360^{{\\circ}}$, $13^{{\\circ}} 20'$, $27 \\times 4 = 108$, or $\\frac{{a}}{{b}}$). For degrees, ALWAYS write $^{{\\circ}}$ with curly braces (e.g. $15^{{\\circ}}$, $13^{{\\circ}} 20'$) or the degree symbol '°'. NEVER write bare ^circ without braces or backslash.
 7. ABSOLUTE QUESTION DIVERSITY: Every single question in the set MUST test a completely unique concept, fact, or formula. NEVER ask two questions testing the same underlying answer or property.
 8. OPTION BALANCING: Evenly distribute the correct option across 'A', 'B', 'C', and 'D'. Do NOT default to putting the correct answer in Option 'A'.
-9. STRICT ANSWER-EXPLANATION CONSISTENCY: The option marked in correct_option ('A', 'B', 'C', or 'D') MUST match your explanation exactly. Never explain one option as right while marking another as correct_option.
+9. STRICT ANSWER-EXPLANATION CONSISTENCY: Do NOT mention option letters (A/B/C/D) inside the explanation; refer to the correct answer by its content instead.
 10. STRICT OPTION UNIQUENESS: All 4 options must be mutually exclusive and completely distinct. Never repeat identical option values or synonyms.
-11. CLEAN UNICODE: Output pure UTF-8 Devanagari text. NEVER output raw Unicode escape codes (such as \\u00E2 or \\uXXXX). Fix any corrupted OCR/PDF characters into standard Hindi words.
+11. CLEAN UNICODE & OCR REPAIR: Output clean UTF-8 text in the requested language (Devanagari for Hindi). If the reference notes contain broken OCR characters or ligatures (such as 'र्णणत' -> 'गणित', 'भार्' -> 'भाग', 'संदहिा' -> 'संहिता', 'लिद्ांत' -> 'सिद्धांत', 'लagna' -> 'लग्न', 'Ǔनरायण' -> 'निरयण', 'भचक' -> 'भचक्र'), you MUST correct them into proper standard Hindi words. NEVER output broken half-English or corrupted characters.
+12. MANDATORY MATH DELIMITERS: ALWAYS wrap every single formula, expression, and degree notation in single dollar signs (e.g. $150^{{\\circ}}$, $\\sin^2(x) + \\cos^2(x) = 1$, $ax^2 + bx + c = 0$, $b^2 - 4ac$). NEVER leave naked mathematical expressions or degree symbols without dollar signs.
 
 Return ONLY a valid JSON array of objects with keys:
 - id: "q_1", "q_2", etc.

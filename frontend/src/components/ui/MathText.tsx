@@ -144,13 +144,29 @@ function cleanLatexFallback(math: string): string {
     .trim();
 }
 
-/* Convert naked degree expressions into inline math */
+/* Convert naked degree expressions and math equations into inline math */
 function prepareMathText(text: string): string {
-  return text.replace(
-    /(^|\s)(\d+(?:\.\d+)?\s*\^\\?circ(?:\s*\d+['"]?)?)(?=\s|$|[,.?!])/gi,
-    (_match, prefix: string, expression: string) =>
-      `${prefix}$${expression}$`
-  );
+  return text
+    // Handle naked degrees like 150^{\circ}, 150^\circ, 150^circ, 13^{\circ} 20'
+    .replace(
+      /(^|\s)(\d+(?:\.\d+)?\s*\^\{?\\?circ\}?(?:\s*\d+['"′]?)?)(?=\s|$|[,.?!])/gi,
+      (_match, prefix: string, expression: string) => `${prefix}$${expression}$`
+    )
+    // Handle naked equations like sin^2(x) + cos^2(x)
+    .replace(
+      /(^|\s)(sin\^2\([^\)]+\)\s*\+\s*cos\^2\([^\)]+\))(?=\s|$|[,.?!])/gi,
+      (_match, prefix: string, expression: string) => `${prefix}$${expression}$`
+    )
+    // Handle naked ax^2 + bx + c = 0
+    .replace(
+      /(^|\s)(ax\^2\s*\+\s*bx\s*\+\s*c\s*=\s*0)(?=\s|$|[,.?!])/gi,
+      (_match, prefix: string, expression: string) => `${prefix}$${expression}$`
+    )
+    // Handle naked (b^2 - 4ac)
+    .replace(
+      /(^|\s)(b\^2\s*-\s*4ac)(?=\s|$|[,.?!])/gi,
+      (_match, prefix: string, expression: string) => `${prefix}$${expression}$`
+    );
 }
 
 /* Detect inline and block mathematical expressions */
@@ -158,7 +174,7 @@ const MATH_SPLIT =
   /(\$\$[\s\S]+?\$\$|\$(?!\s)[^$\n]+?\$(?!\d))/g;
 
 const NEEDS_MATH =
-  /\$\$[\s\S]+?\$\$|\$(?!\s)[^$\n]+?\$(?!\d)|\d+\s*\^\\?circ/i;
+  /\$\$[\s\S]+?\$\$|\$(?!\s)[^$\n]+?\$(?!\d)|\d+\s*\^\{?\\?circ|sin\^2|ax\^2|b\^2/i;
 
 interface MathTextProps {
   text: string;
