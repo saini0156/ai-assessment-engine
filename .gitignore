@@ -4,7 +4,11 @@
 
 # --- Python & Backend ---
 backend/venv/
+# --- Environment Files ---
+.env
+.env.*
 backend/.env
+backend/.env.*
 **/__pycache__/
 *.py[cod]
 *$py.class
