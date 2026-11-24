@@ -12,8 +12,11 @@ router = APIRouter()
 # Simple in‑process cache: hash+provider -> topics list
 _cache: dict[Tuple[str, str], List[str]] = {}
 
+from app.config import settings
+from app.services.llm_service import GroqKeyPool
+
 # Primary and fallback keys
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = settings.GEMINI_API_KEY
 FREE_LLM_UNIFIED_KEY = os.getenv("FREE_LLM_UNIFIED_KEY")
 FREE_LLM_ENDPOINT = os.getenv("FREE_LLM_ENDPOINT", "https://api.free-llm.com/v1/generate")
 # Optional flag to prioritize the unified free‑LLM key as the primary provider
@@ -25,8 +28,6 @@ if not GEMINI_API_KEY and not FREE_LLM_UNIFIED_KEY:
     raise RuntimeError("At least one of GEMINI_API_KEY or FREE_LLM_UNIFIED_KEY must be set in environment")
 
 # Load additional key pools for multi‑key rotation (Gemini & Groq)
-from app.config import settings
-from app.services.llm_service import GroqKeyPool
 _gemini_key_pool = GroqKeyPool(settings.GEMINI_API_KEYS)
 _groq_key_pool = GroqKeyPool(settings.GROQ_API_KEYS)
 
