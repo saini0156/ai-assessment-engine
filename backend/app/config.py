@@ -16,9 +16,7 @@ class Settings:
     VERSION: str = "1.0.0"
     API_V1_PREFIX: str = "/api/v1"
     
-    # AI API Keys (Supports single or multi-key comma separated or numbered keys)
-    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    # AI API Keys (Supports single or multi-key comma/newline/space separated or numbered keys)
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
     # FreeLLMAPI Local / Cloud Gateway
@@ -39,10 +37,12 @@ class Settings:
     @property
     def GROQ_API_KEYS(self) -> List[str]:
         """Returns all configured Groq API keys for load balancing and rate limit failover."""
+        import re
         keys = []
         raw = os.getenv("GROQ_API_KEYS", "") or os.getenv("GROQ_API_KEY", "")
         if raw:
-            for k in raw.split(","):
+            parts = re.split(r'[,;\n\r\s]+', raw)
+            for k in parts:
                 k_clean = k.strip().strip('"').strip("'")
                 if k_clean and k_clean not in keys:
                     keys.append(k_clean)
@@ -59,12 +59,20 @@ class Settings:
         return keys
 
     @property
+    def GROQ_API_KEY(self) -> str:
+        """Returns the primary Groq API key (first key from pool)."""
+        pool = self.GROQ_API_KEYS
+        return pool[0] if pool else ""
+
+    @property
     def GEMINI_API_KEYS(self) -> List[str]:
         """Returns all configured Gemini API keys for failover."""
+        import re
         keys = []
         raw = os.getenv("GEMINI_API_KEYS", "") or os.getenv("GEMINI_API_KEY", "")
         if raw:
-            for k in raw.split(","):
+            parts = re.split(r'[,;\n\r\s]+', raw)
+            for k in parts:
                 k_clean = k.strip().strip('"').strip("'")
                 if k_clean and k_clean not in keys:
                     keys.append(k_clean)
@@ -78,6 +86,12 @@ class Settings:
                 keys.append(n_clean)
             idx += 1
         return keys
+
+    @property
+    def GEMINI_API_KEY(self) -> str:
+        """Returns the primary clean single Gemini API key (first key from pool)."""
+        pool = self.GEMINI_API_KEYS
+        return pool[0] if pool else ""
     
     # Mode: "mock", "gemini", "groq", "openai"
     DEFAULT_PROVIDER: str = os.getenv("DEFAULT_PROVIDER", "groq" if os.getenv("GROQ_API_KEY") else ("gemini" if os.getenv("GEMINI_API_KEY") else "mock"))
