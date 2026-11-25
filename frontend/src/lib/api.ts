@@ -471,6 +471,37 @@ export const apiClient = {
     return res.json();
   },
 
+    /**
+   * Leaderboard: total points
+   */
+  getLeaderboard: async (period: LeaderboardPeriod): Promise<LeaderboardResponse> => {
+    if (USE_MOCK_LEADERBOARD) return mockPoints(period);
+
+    const res = await fetch(`${API_BASE}/leaderboard?period=${period}`, {
+      headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error(await parseError(res, "Failed to load the leaderboard"));
+    return res.json();
+  },
+
+  /**
+   * Leaderboard: best attempts for one subject and topic
+   */
+  getTopicLeaderboard: async (
+    subject: string,
+    topic: string,
+    period: LeaderboardPeriod
+  ): Promise<TopicLeaderboardResponse> => {
+    if (USE_MOCK_LEADERBOARD) return mockTopic(subject, topic, period);
+
+    const params = new URLSearchParams({ subject, topic, period });
+    const res = await fetch(`${API_BASE}/leaderboard/topic?${params}`, {
+      headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error(await parseError(res, "Failed to load the topic leaderboard"));
+    return res.json();
+  },
+
   /**
    * Admin: Quiz History for One User
    */
@@ -526,4 +557,83 @@ export const apiClient = {
     return res.json();
   },
 };
+
+
+// ---------------------------------------------------------------
+// Leaderboard: sample data until the backend endpoints are live.
+// When Nitish's endpoints are ready, set this to false.
+// ---------------------------------------------------------------
+const USE_MOCK_LEADERBOARD = true;
+
+const MOCK_NAMES = [
+  "Aarav S.", "Priya M.", "Rohan K.", "Ananya R.", "Vikram P.",
+  "Sneha D.", "Karan T.", "Isha N.", "Arjun B.", "Meera J.",
+];
+
+const shortName = (full: string) => {
+  const [first, last] = full.trim().split(/\s+/);
+  return last ? `${first} ${last.charAt(0)}.` : first || "You";
+};
+
+function mockPoints(period: LeaderboardPeriod): LeaderboardResponse {
+  const k = period === "week" ? 1 : period === "month" ? 3 : 8;
+  const session = getSession();
+  return {
+    period,
+    total_participants: 42,
+    entries: MOCK_NAMES.map((name, i) => ({
+      rank: i + 1,
+      user_id: `mock-${i}`,
+      display_name: name,
+      points: (300 - i * 24) * k,
+      quizzes_taken: (12 - i) * k,
+      avg_score: 92 - i * 3,
+    })),
+    me: session
+      ? {
+          rank: 12,
+          user_id: session.user.id,
+          display_name: shortName(session.user.name),
+          points: 60 * k,
+          quizzes_taken: 3 * k,
+          avg_score: 61,
+        }
+      : null,
+  };
+}
+
+function mockTopic(subject: string, topic: string, period: LeaderboardPeriod): TopicLeaderboardResponse {
+  const levels = ["Hard", "Hard", "Medium", "Hard", "Medium", "Easy", "Medium", "Easy", "Easy", "Medium"];
+  const session = getSession();
+  return {
+    subject,
+    topic,
+    period,
+    total_participants: 18,
+    entries: MOCK_NAMES.map((name, i) => ({
+      rank: i + 1,
+      user_id: `mock-${i}`,
+      display_name: name,
+      points: 60 - i * 5,
+      score_percentage: 100 - i * 4,
+      difficulty: levels[i],
+      correct_count: 10 - Math.floor(i / 2),
+      total_questions: 10,
+      achieved_at: new Date(Date.now() - i * 86400000).toISOString(),
+    })),
+    me: session
+      ? {
+          rank: 11,
+          user_id: session.user.id,
+          display_name: shortName(session.user.name),
+          points: 12,
+          score_percentage: 60,
+          difficulty: "Medium",
+          correct_count: 6,
+          total_questions: 10,
+          achieved_at: new Date().toISOString(),
+        }
+      : null,
+  };
+}
 

@@ -141,3 +141,43 @@ export interface AdminUserHistoryItem {
 export interface UserRoleUpdateRequest {
   role: UserRole;
 }
+
+// 7. Leaderboard
+export type LeaderboardPeriod = "week" | "month" | "all";
+
+export interface LeaderboardEntry {
+  rank: number;
+  user_id: string;
+  display_name: string;
+  points: number;
+  quizzes_taken: number;
+  avg_score: number | null;
+}
+
+export interface LeaderboardResponse {
+  period: LeaderboardPeriod;
+  total_participants: number;
+  entries: LeaderboardEntry[];
+  me: LeaderboardEntry | null;
+}
+
+export interface TopicLeaderboardEntry {
+  rank: number;
+  user_id: string;
+  display_name: string;
+  points: number;
+  score_percentage: number;
+  difficulty: string;
+  correct_count: number;
+  total_questions: number;
+  achieved_at: string;
+}
+
+export interface TopicLeaderboardResponse {
+  subject: string;
+  topic: string;
+  period: LeaderboardPeriod;
+  total_participants: number;
+  entries: TopicLeaderboardEntry[];
+  me: TopicLeaderboardEntry | null;
+}

@@ -22,6 +22,7 @@ import { AuthResponse } from "@/types";
 const links = [
   { href: "/", label: "Home" },
   { href: "/quiz/new", label: "Quiz" },
+  { href: "/leaderboard", label: "Leaderboard" },
 ];
 
 export function Navbar() {
