@@ -7,6 +7,7 @@ from app.api.syllabus import router as syllabus_router
 from app.api.quiz import router as quiz_router
 from app.api.tutor import router as tutor_router
 from app.api.topics import router as topics_router
+from app.api.leaderboard import router as leaderboard_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -36,6 +37,7 @@ app.include_router(syllabus_router, prefix=settings.API_V1_PREFIX)
 app.include_router(quiz_router, prefix=settings.API_V1_PREFIX)
 app.include_router(tutor_router, prefix=settings.API_V1_PREFIX)
 app.include_router(topics_router, prefix=settings.API_V1_PREFIX)
+app.include_router(leaderboard_router, prefix=settings.API_V1_PREFIX)
 
 @app.on_event("startup")
 def on_startup():

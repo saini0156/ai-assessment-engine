@@ -332,3 +332,44 @@ class QuizFeedbackCreate(BaseModel):
         ..., min_length=1, max_length=2000,
         description="Free‑form comment about the question/option wording, difficulty, etc.")
     user_id: Optional[Union[str, int]] = None
+
+
+# =========================================================================
+# --- 7. Leaderboard Models ---
+# =========================================================================
+
+class LeaderboardEntry(BaseModel):
+    rank: int
+    user_id: str
+    display_name: str
+    points: int
+    quizzes_taken: int
+    avg_score: Optional[float] = None
+
+
+class LeaderboardResponse(BaseModel):
+    period: str
+    total_participants: int
+    entries: List[LeaderboardEntry]
+    me: Optional[LeaderboardEntry] = None
+
+
+class TopicLeaderboardEntry(BaseModel):
+    rank: int
+    user_id: str
+    display_name: str
+    points: int
+    score_percentage: float
+    difficulty: str
+    correct_count: int
+    total_questions: int
+    achieved_at: Optional[str] = None
+
+
+class TopicLeaderboardResponse(BaseModel):
+    subject: str
+    topic: str
+    period: str
+    total_participants: int
+    entries: List[TopicLeaderboardEntry]
+    me: Optional[TopicLeaderboardEntry] = None
