@@ -28,7 +28,8 @@ report = []
 def log(status, msg):
     report.append((status, msg))
     print(f"  [{status}] {msg}")
-    
+
+
 def read(path):
     raw = path.read_bytes().decode("utf-8")
     crlf = "\r\n" in raw

@@ -25,6 +25,9 @@ DIFFICULTY_WEIGHTS = {
     "hard": 3,
 }
 
+DEMO_USER_ID = "demo-student-id"
+
+
 def format_display_name(full_name: Optional[str]) -> str:
     """Format full name into privacy-preserving 'First L.' format (e.g. 'Priya Mishra' -> 'Priya M.')."""
     if not full_name:
@@ -69,11 +72,12 @@ class LeaderboardService:
         cutoff = self._get_cutoff_date(period_clean)
         db = SessionLocal()
         try:
-            # Query all submitted sessions with at least 10 questions
+            # Query all submitted sessions with at least 10 questions (excluding internal demo user)
             query = db.query(QuizSession).filter(
                 QuizSession.status == "submitted",
                 QuizSession.total_questions >= 10,
                 QuizSession.user_id.isnot(None),
+                QuizSession.user_id != DEMO_USER_ID,
             )
 
             if cutoff:
@@ -235,6 +239,7 @@ class LeaderboardService:
                 QuizSession.status == "submitted",
                 QuizSession.total_questions >= 10,
                 QuizSession.user_id.isnot(None),
+                QuizSession.user_id != DEMO_USER_ID,
             )
 
             if top:

@@ -35,7 +35,7 @@ feedback_service = FeedbackService()
 @router.post("/generate", response_model=QuizGenerateResponse)
 async def generate_quiz(
     request: QuizGenerateRequest,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Generate multiple choice questions.
     ZERO-LEAK SECURITY: Correct answers and explanations are stored in backend memory
@@ -100,7 +100,7 @@ async def generate_quiz(
 @router.post("/submit", response_model=QuizSubmitResponse)
 async def submit_quiz(
     request: QuizSubmitRequest,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Submit student answers, grade the test, and release answer keys and explanations.
     Saves the attempt against the logged-in user's user_id when authenticated.
